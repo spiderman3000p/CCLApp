@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--style name="ToolbarTheme" parent="@style/ThemeOverlay.AppCompat.ActionBar">
+        <item name="colorControlNormal">@color/white</item>
+    </style-->
+
+    <style name="Widget.Theme.CCLApp.ActionBar.Fullscreen" parent="Widget.AppCompat.ActionBar">
+        <item name="android:background">@color/black_overlay</item>
+    </style>
+
+    <style name="buttonStyle" parent="@style/Widget.MaterialComponents.Button">
+        <item name="android:background">@drawable/background_button</item>
+    </style>
+</resources>
