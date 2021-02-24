@@ -9,7 +9,6 @@
     tools:context=".activities.PlanificationsActivity">
 
     <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="@dimen/app_bar_height"
         android:background="@drawable/high_angle_delivery_man_checking_packages_list"
@@ -44,7 +43,6 @@
         android:background="#FFFFFF" />
 
     <ProgressBar
-        android:id="@+id/progressBarPlanifications"
         style="@android:style/Widget.DeviceDefault.Light.ProgressBar.Large"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -53,7 +51,6 @@
         android:visibility="gone" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/addBtn"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|right"

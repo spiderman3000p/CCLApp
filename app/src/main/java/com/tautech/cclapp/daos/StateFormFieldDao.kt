@@ -1,7 +1,7 @@
 package com.tautech.cclapp.daos
 
 import androidx.room.*
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.StateFormField
 
 @Dao
 interface StateFormFieldDao {
@@ -25,4 +25,7 @@ interface StateFormFieldDao {
 
     @Query("SELECT * FROM stateformfield WHERE id = :id")
     fun getById(id: Long?): StateFormField
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertAll(allFields: List<StateFormField>)
 }

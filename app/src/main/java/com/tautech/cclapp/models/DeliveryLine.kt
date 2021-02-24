@@ -1,19 +1,16 @@
 package com.tautech.cclapp.models
 
-import androidx.room.*
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
 
-@Entity(primaryKeys = ["planificationId", "deliveryLineId", "deliveryId", "index"],
-    indices = [Index(value = ["planificationId", "deliveryId", "index"], name = "delivery_line_index", unique = true)],
-    foreignKeys = [ForeignKey(entity = PlanificationLine::class,
-        parentColumns = ["id"],
-        childColumns = ["deliveryId"],
-        onDelete = ForeignKey.CASCADE,
-        onUpdate = ForeignKey.CASCADE)])
+@Entity(primaryKeys = ["planificationId", "id", "deliveryId", "index"])
 data class DeliveryLine(
-    @SerializedName("deliveryLineId")
-    @ColumnInfo(name = "deliveryLineId")
+    @SerializedName("id")
+    @ColumnInfo(name = "id")
     var id: Long = 0,
     @SerializedName("packetType")
     @ColumnInfo(name = "packetType")
@@ -30,9 +27,9 @@ data class DeliveryLine(
     @SerializedName("reference")
     @ColumnInfo(name = "reference")
     var reference: String = "",
-    @SerializedName("referenceDescription")
-    @ColumnInfo(name = "referenceDescription")
-    var referenceDescription: String = "",
+    @SerializedName("description")
+    @ColumnInfo(name = "description")
+    var description: String = "",
     @SerializedName("weight")
     @ColumnInfo(name = "weight")
     var weight: Double = 0.0,
@@ -45,6 +42,9 @@ data class DeliveryLine(
     @SerializedName("uploaded")
     @ColumnInfo(name = "uploaded")
     var uploaded: Boolean = false,
+    @SerializedName("certified")
+    @ColumnInfo(name = "certified")
+    var certified: Int = 0,
     @SerializedName("delivered")
     @ColumnInfo(name = "delivered")
     var delivered: Boolean? = null,

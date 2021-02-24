@@ -72,7 +72,6 @@
         app:layout_constraintTop_toBottomOf="@id/pendingTv">
 
         <ImageView
-            android:id="@+id/imageView7"
             android:layout_width="20dp"
             android:layout_height="48dp"
             android:layout_weight="0.15"

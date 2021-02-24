@@ -18,18 +18,29 @@ interface CclDataService {
     @Headers("Content-Type: application/json")
     fun getPlanifications(
         @Url url: String,
-        @Header("Authorization") authorization: String,
-        @Header("driver-id") driverId: Long,
-        /*@Header("address-id") addressId: Long*/
+        @Header("Authorization") authorization: String
     ): Call<PlanificationsResponse>
 
-    @POST
+    @GET
     @Headers("Content-Type: application/json")
     fun getPlanificationLines(
-    @Url url: String,
-    @Header("Authorization") authorization: String,
-    @Body IdsArray: ArrayList<Long>
-    ): Call<ArrayList<PlanificationWithLine>>
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<PlanificationLinesResponse>
+
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getDeliveryDeliveryLines(
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<DeliveryDeliveryLinesResponse>
+
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getPlanificationDeliveryLines(
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<PlanificationDeliveryLinesResponse>
 
     @POST
     @Headers("Content-Type: application/json")
@@ -50,7 +61,13 @@ interface CclDataService {
     @Headers("Content-Type: application/json")
     fun changePlanificationState(
         @Url url: String,
-        @Header("Authorization") authorization: String): Call<Any?>
+        @Header("Authorization") authorization: String): Call<Void>
+
+    @POST
+    @Headers("Content-Type: application/json")
+    fun changeDeliveryState(
+        @Url url: String,
+        @Header("Authorization") authorization: String): Call<Void>
 
     @GET
     @Headers("Content-Type: application/json")
@@ -83,8 +100,7 @@ interface CclDataService {
     @Headers("Content-Type: application/json")
     fun saveDeliveredItems(
         @Url url: String,
-        @Body deliveredItems: List<Any>,
-        @Header("customer-id") customerId: Long?,
+        @Body deliveredItems: List<DeliveredItemToUpload>?,
         @Header("Authorization") authorization: String
-    ): Call<Int>
+    ): Call<Void>
 }

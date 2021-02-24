@@ -1,164 +1,200 @@
 package com.tautech.cclapp.classes
 
 import android.content.Context
-import android.content.DialogInterface
+import android.database.Cursor
+import android.database.sqlite.SQLiteAccessPermException
+import android.database.sqlite.SQLiteCantOpenDatabaseException
+import android.database.sqlite.SQLiteDatabaseLockedException
+import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import androidx.core.content.FileProvider
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.tautech.cclapp.R
+import androidx.work.hasKeyWithValueOfType
+import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.StateForm
 import com.tautech.cclapp.services.CclClient
+import com.tautech.cclapp.services.MyWorkerManagerService
 import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
+import okhttp3.MediaType
 import okhttp3.MultipartBody
-import org.jetbrains.anko.doAsync
+import okhttp3.RequestBody
 import retrofit2.Retrofit
+import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
+
 
 class UploadFilesWorker
     (
     val appContext: Context,
-    val workerParams: WorkerParameters,
-    val deliveryId: Long?,
-    val customerId: Long?,
-    formDataWithFiles: StateForm?
+    workerParams: WorkerParameters,
 ) : Worker(appContext, workerParams) {
     private val TAG = "UPLOAD_FILES_WORKER"
     private var retrofitClient: Retrofit? = null
-    private var mAuthService: AuthorizationService? = null
+    private val MAX_REINTENT = 3
+    private var failedRequestsCounter = 0
+    var db: AppDatabase? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
-    private var formDataWithFiles: StateForm? = null
-    init {
-        initAll()
-    }
-
-    fun initAll(){
-        retrofitClient = CclClient.getInstance()
-        mStateManager = AuthStateManager.getInstance(this.appContext)
-        mConfiguration = Configuration.getInstance(appContext)
-        val config = Configuration.getInstance(appContext)
-        if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                appContext,
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            mStateManager?.signOut(appContext)
-            return
-        }
-        mAuthService = AuthorizationService(
-            appContext,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
-        if (!mStateManager!!.current.isAuthorized) {
-            //showAlert(getString(R.string.error), getString(R.string.unauthorized_user))
-            Log.i(TAG, "No hay autorizacion para el usuario")
-            if (mStateManager?.signOut(appContext) == true){
-
-            }
-            return
-        }
-    }
 
     override fun doWork(): Result {
-        saveDeliveryStateFormWithFiles()
-        return Result.success()
-    }
-
-    private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
-        Log.i(TAG, "Fetching user planifications...")
+        retrofitClient = CclClient.getInstance()
+        mStateManager = AuthStateManager.getInstance(appContext)
         try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
-                callback)
-        }catch (ex: AuthorizationException) {
-            Log.e(TAG, "error fetching data", ex)
-        }
-    }
-
-    fun saveDeliveryStateFormWithFiles() {
-        if (formDataWithFiles != null) {
-            fetchData(this::saveDeliveryStateFormWithFiles)
-        }
-    }
-
-    private fun saveDeliveryStateFormWithFiles(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
-        if (ex != null) {
-            Log.e(TAG, "Token refresh failed when finalizing planification load", ex)
-            AuthStateManager.driverInfo = null
-            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                //showAlert("Error", "Sesion Expirada", this::signOut)
-            }
-            return
-        }
-        val dataService: CclDataService? = CclClient.getInstance()?.create(
-            CclDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            formDataWithFiles?.data?.forEach { item ->
-                if (item.value != null && item.value is MultipartBody.Part) {
-                    val urlSaveForm =
-                        "delivery/state-history/upload-file/${deliveryId}?propertyName=${item.name}"
-                    /*val photoURI: Uri = FileProvider.getUriForFile(
-                        this,
-                        "com.tautech.cclapp.fileprovider",
-                        item.value as File
-                    )*/
-                    doAsync {
-                        Toast.makeText(applicationContext, "guardando ${item.name}: ", Toast.LENGTH_SHORT).show()
-                        try {
-                            val callSaveForm = dataService.savePlanificationStateFormFile(urlSaveForm,
-                                item.value as MultipartBody.Part,
-                                customerId,
-                                "Bearer $accessToken")
-                                .execute()
-                            //hideLoader()
-                            val responseSaveForm = callSaveForm.body()
-                            Log.i(TAG, "save file ${item.name} response $responseSaveForm")
-                            if (responseSaveForm != null) {
-                                //showSnackbar(getString(R.string.form_saved_successfully))
-                            }
-                        } catch(toe: SocketTimeoutException) {
-                            //hideLoader()
-                            Log.e(TAG, "Network error when saving ${item.name} file", toe)
-                            //showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
-                        } catch (ioEx: IOException) {
-                            /*hideLoader()*/
-                            Log.e(TAG,
-                                "Network error when saving ${item.name} file",
-                                ioEx)
-                            /*showAlert(getString(R.string.network_error_title), getString(R.string.network_error))*/
-                        }
-                    }
-                } else {
-                    //showSnackbar(getString(R.string.invalid_file_for, item.name))
+            db = AppDatabase.getDatabase(appContext)
+        } catch (ex: SQLiteDatabaseLockedException) {
+            return when(failedRequestsCounter < MAX_REINTENT){
+                true -> {
+                    failedRequestsCounter++
+                    Log.e(TAG, "Database error found", ex)
+                    Result.retry()
                 }
+                else -> Result.failure()
+            }
+        } catch (ex: SQLiteAccessPermException) {
+            return when(failedRequestsCounter < MAX_REINTENT){
+                true -> {
+                    failedRequestsCounter++
+                    Log.e(TAG, "Database error found", ex)
+                    Result.retry()
+                }
+                else -> Result.failure()
+            }
+        } catch (ex: SQLiteCantOpenDatabaseException) {
+            return when(failedRequestsCounter < MAX_REINTENT){
+                true -> {
+                    failedRequestsCounter++
+                    Log.e(TAG, "Database error found", ex)
+                    Result.retry()
+                }
+                else -> Result.failure()
             }
         }
+        if (!mStateManager!!.current.isAuthorized) {
+            Log.e(TAG, "No hay autorizacion para el usuario. Sesion de usuario ha finalizado")
+            mStateManager?.refreshAccessToken()
+            return when(failedRequestsCounter < MAX_REINTENT){
+                true -> {
+                    failedRequestsCounter++
+                    Result.retry()
+                }
+                else -> Result.failure()
+            }
+        }
+        if (inputData.hasKeyWithValueOfType<String>("itemName") &&
+            inputData.hasKeyWithValueOfType<String>("fileTag") &&
+            inputData.hasKeyWithValueOfType<Int>("savedFormId") &&
+            inputData.hasKeyWithValueOfType<Long>("customerId")) {
+            val itemName = inputData.getString("itemName")
+            val fileTag = inputData.getString("fileTag")
+            val savedFormId = inputData.getInt("savedFormId", 0)
+            val customerId = inputData.getLong("customerId", 0)
+            if (fileTag != null && MyWorkerManagerService.filesToUpload.containsKey(fileTag)) {
+                try {
+                    val file = MyWorkerManagerService.filesToUpload.getValue(fileTag)
+                    val fileUri: Uri = FileProvider.getUriForFile(
+                        appContext,
+                        "com.tautech.cclapp.fileprovider",
+                        file
+                    )
+                    val mediaTypeStr = appContext.contentResolver?.getType(fileUri)
+                    if (mediaTypeStr != null) {
+                        val mimeType = MediaType.parse(mediaTypeStr)
+                        Log.i(TAG,
+                            "media type de ${itemName}:, mediaTypeStr: $mediaTypeStr, mimeType: $mimeType")
+                        val requestFile = RequestBody.create(MediaType.parse("multipart/form-data"),
+                            file)
+                        val body = MultipartBody.Part.createFormData("file", itemName, requestFile)
+                        val dataService: CclDataService? = CclClient.getInstance()?.create(
+                            CclDataService::class.java)
+                        if (dataService != null && mStateManager?.current?.accessToken != null) {
+                            Log.i(TAG, "uploading file ${itemName}...")
+                            val urlSaveForm =
+                                "delivery/state-history/upload-file/${savedFormId}?propertyName=${itemName}"
+                            try {
+                                val callSaveForm = dataService.savePlanificationStateFormFile(
+                                    urlSaveForm,
+                                    body,
+                                    customerId,
+                                    "Bearer ${mStateManager?.current?.accessToken}")
+                                    .execute()
+                                Log.i(TAG,
+                                    "save file ${itemName} response code ${callSaveForm.code()}")
+                                if(callSaveForm.code() == 200){
+                                    MyWorkerManagerService.filesToUpload.remove(fileTag)
+                                }
+                            } catch (toe: SocketTimeoutException) {
+                                Log.e(TAG, "Network error when saving ${itemName} file", toe)
+                                return when(failedRequestsCounter < MAX_REINTENT){
+                                    true -> {
+                                        failedRequestsCounter++
+                                        Result.retry()
+                                    }
+                                    else -> {
+                                        MyWorkerManagerService.filesToUpload.remove(fileTag)
+                                        Result.failure()
+                                    }
+                                }
+                            } catch (ioEx: IOException) {
+                                Log.e(TAG,
+                                    "Network error when saving ${itemName} file",
+                                    ioEx)
+                                return when(failedRequestsCounter < MAX_REINTENT){
+                                    true -> {
+                                        failedRequestsCounter++
+                                        Result.retry()
+                                    }
+                                    else -> {
+                                        MyWorkerManagerService.filesToUpload.remove(fileTag)
+                                        Result.failure()
+                                    }
+                                }
+                            }
+                        } else {
+                            Log.e(TAG,
+                                "El cliente http o la autenticacion de usuario son invalidos. No se puede realizar el proceso")
+                            return when(failedRequestsCounter < MAX_REINTENT){
+                                true -> {
+                                    failedRequestsCounter++
+                                    mStateManager?.refreshAccessToken()
+                                    Result.retry()
+                                }
+                                else -> {
+                                    MyWorkerManagerService.filesToUpload.remove(fileTag)
+                                    Result.failure()
+                                }
+                            }
+                        }
+                    } else {
+                        Log.e(TAG, "mimetype de ${itemName} es invalido")
+                    }
+                } catch(ex: Exception){
+                    Log.e(TAG, "ocurrio una excepcion al parsear uri a archivo", ex)
+                }
+            } else {
+                Log.e(TAG, "el archivo $fileTag no se encuentra en la lista de archivos por subir")
+            }
+        } else {
+            Log.e(TAG, "no se recibieron los parametros esperados: $inputData")
+        }
+        return Result.failure()
     }
 
-    fun showAlert(title: String, message: String, positiveCallback: (() -> Unit)? = null, negativeCallback: (() -> Unit)? = null) {
-        val builder = AlertDialog.Builder(applicationContext)
-        builder.setTitle(title)
-        builder.setMessage(message)
-        builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { dialog, id ->
-            if (positiveCallback != null) {
-                positiveCallback()
-            }
-            dialog.dismiss()
-        })
-        builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener { dialog, id ->
-            if (negativeCallback != null) {
-                negativeCallback()
-            }
-            dialog.dismiss()
-        })
-        val dialog: AlertDialog = builder.create()
-        dialog.show()
+    fun getRealPathFromURI(context: Context, contentUri: Uri?): String? {
+        var cursor: Cursor? = null
+        return try {
+            val proj = arrayOf(MediaStore.Images.Media.DATA)
+            cursor = context.contentResolver.query(contentUri!!, proj, null, null, null)
+            val columnIndex: Int = cursor?.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)!!
+            cursor.moveToFirst()
+            cursor.getString(columnIndex)
+        } catch(ex: Exception) {
+            Log.e(TAG, "Excepcion encontrada al obtener path de uri", ex)
+            null
+        } finally {
+            cursor?.close()
+        }
     }
 }

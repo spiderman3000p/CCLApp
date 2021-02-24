@@ -12,14 +12,10 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.DeliveryDetailActivity
 import com.tautech.cclapp.activities.DeliveryDetailActivityViewModel
-import com.tautech.cclapp.R
 import kotlinx.android.synthetic.main.fragment_delivery_detail.view.*
-import kotlinx.android.synthetic.main.fragment_delivery_detail.view.totalItemsChip
-import kotlinx.android.synthetic.main.fragment_delivery_detail.view.totalValueChip
-import kotlinx.android.synthetic.main.fragment_delivery_detail.view.totalWeightChip
-import kotlinx.android.synthetic.main.fragment_planification_detail.view.*
 
 class DeliveryDetailFragment : Fragment() {
   val TAG = "DELIVERY_DETAIL_FRAGMENT"
@@ -55,14 +51,17 @@ class DeliveryDetailFragment : Fragment() {
         }
       }
       root.receiverAddressTv.text = delivery.receiverAddress
-      root.senderNameTv.text = delivery.senderName
-      root.citySenderNameTv.text = delivery.citySenderName
+      //root.senderNameTv.text = delivery.senderName
+      //root.citySenderNameTv.text = delivery.citySenderName
+      root.citySenderNameTv.visibility = View.GONE
+      root.senderNameTv.visibility = View.GONE
+      root.textView2.visibility = View.GONE
       root.completedTv.text = "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
       root.completedProgressBar.progress = getCompletedDeliveryLinesProgress()
       root.totalItemsChip.text = delivery.totalQuantity.toString()
-      root.totalCertifiedItemsChip.text = ""
+      root.totalCertifiedItemsChip.text = delivery.totalCertified.toString()
       root.totalWeightChip.text = "%.2f".format(delivery.totalWeight ?: 0) + " kg"
-      root.totalValueChip.text = "%.2f".format(delivery.totalDeclared ?: 0) + " $"
+      root.totalValueChip.text = "%.2f".format(delivery.totalValue ?: 0) + " $"
       if (activity?.packageManager != null) {
         if (!delivery.receiverAddressLatitude.isNullOrEmpty() && !delivery.receiverAddressLongitude.isNullOrEmpty()) {
           // Create a Uri from an intent string. Use the result to create an Intent.
@@ -101,6 +100,6 @@ class DeliveryDetailFragment : Fragment() {
   }
 
   fun getCompletedDeliveryLinesProgress(): Int {
-    return ((viewModel.procesedDeliveryLines.value?.size ?: 0) * 100) / (viewModel.delivery.value?.totalQuantity ?: 1)
+    return ((viewModel.deliveryLines.value?.size ?: 0) * 100) / (viewModel.delivery.value?.totalQuantity ?: 1)
   }
 }

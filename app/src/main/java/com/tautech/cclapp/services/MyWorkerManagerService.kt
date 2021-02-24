@@ -1,21 +1,27 @@
 package com.tautech.cclapp.services
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.work.*
-import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.UploadFailedCertificationsWorker
+import com.tautech.cclapp.classes.UploadFilesWorker
 import com.tautech.cclapp.classes.UploadSingleCertificationWorker
-import com.tautech.cclapp.database.AppDatabase
-import com.tautech.cclapp.models.CertificationToUpload
+import com.tautech.cclapp.models.Item
 import com.tautech.cclapp.models.PendingToUploadCertification
-import net.openid.appauth.AuthorizationService
-import retrofit2.Retrofit
+import okhttp3.MultipartBody
+import org.jetbrains.anko.doAsync
+import java.io.File
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 class MyWorkerManagerService {
     companion object{
         private val TAG = "MY_WORKER_MANAGER_SERVICE"
+        val filesToUpload: MutableMap<String, File> = mutableMapOf()
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -52,6 +58,28 @@ class MyWorkerManagerService {
             WorkManager
                 .getInstance(context)
                 .enqueueUniquePeriodicWork("uploadFailedCertificationsRequest", ExistingPeriodicWorkPolicy.KEEP, uploadWorkRequest)
+        }
+
+        fun enqueSingleFileUpload(context: Context, item: Item, savedFormId: Int?, customerId: Long?) {
+            Log.i(TAG, "encolando work para subir archivo ${item.name}")
+            val fileTag = "uploadFormFile-${savedFormId}-${item.name}"
+            filesToUpload[fileTag] = item.value as File
+            val data = workDataOf(
+                "itemName" to item.name,
+                "fileTag" to fileTag,
+                "savedFormId" to savedFormId,
+                "customerId" to customerId
+            )
+            val uploadWorkRequest =
+                OneTimeWorkRequestBuilder<UploadFilesWorker>()
+                    .setConstraints(constraints)
+                    .setBackoffCriteria(BackoffPolicy.LINEAR, 10, TimeUnit.SECONDS)
+                    .addTag("uploadFormFile-${savedFormId}-${item.name}")
+                    .setInputData(data)
+                    .build()
+            WorkManager
+                .getInstance(context)
+                .enqueueUniqueWork("uploadFormFile-${savedFormId}-${item.name}", ExistingWorkPolicy.KEEP, uploadWorkRequest)
         }
     }
 }

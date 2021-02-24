@@ -1,31 +1,23 @@
 package com.tautech.cclapp.classes
 
 import android.content.Context
-import android.content.DialogInterface
 import android.database.sqlite.SQLiteAccessPermException
 import android.database.sqlite.SQLiteCantOpenDatabaseException
 import android.database.sqlite.SQLiteDatabaseLockedException
 import android.util.Log
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.work.*
+import androidx.work.Worker
+import androidx.work.WorkerParameters
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.Certification
 import com.tautech.cclapp.models.CertificationToUpload
 import com.tautech.cclapp.models.PendingToUploadCertification
-import com.tautech.cclapp.models.StateForm
 import com.tautech.cclapp.services.CclClient
-import kotlinx.coroutines.runBlocking
 import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
-import okhttp3.MultipartBody
-import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
 import java.io.IOException
 import java.net.SocketTimeoutException
-import java.util.concurrent.TimeUnit
 
 class UploadSingleCertificationWorker
     (val appContext: Context,
@@ -33,17 +25,14 @@ class UploadSingleCertificationWorker
 ) : Worker(appContext, workerParams) {
     private val TAG = "UPLOAD_SINGLE_CERTIFICATION_WORKER"
     private val MAX_REINTENT = 3
+    private var failedRequestsCounter = 0
     var db: AppDatabase? = null
     private var retrofitClient: Retrofit? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
-    private var failedRequestsCounter = 0
 
     override fun doWork(): Result {
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(appContext)
-        mConfiguration = Configuration.getInstance(appContext)
         try {
             db = AppDatabase.getDatabase(appContext)
         } catch(ex: SQLiteDatabaseLockedException) {
@@ -53,12 +42,6 @@ class UploadSingleCertificationWorker
         } catch (ex: SQLiteCantOpenDatabaseException) {
             Log.e(TAG, "Database error found", ex)
         }
-        val config = Configuration.getInstance(appContext)
-        mAuthService = AuthorizationService(
-            appContext,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         if (!mStateManager!!.current.isAuthorized) {
             Log.e(TAG, "No hay autorizacion para el usuario. Sesion de usuario ha finalizado")
             return Result.failure()

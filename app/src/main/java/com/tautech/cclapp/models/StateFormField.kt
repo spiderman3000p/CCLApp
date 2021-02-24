@@ -1,21 +1,15 @@
 package com.tautech.cclapp.models
 
-import android.app.ActionBar
 import android.util.Log
-import android.view.View
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import androidx.room.*
 import androidx.room.ForeignKey.CASCADE
-import com.google.gson.Gson
 import com.google.gson.JsonIOException
 import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
 import org.json.JSONArray
 import org.json.JSONException
-import org.json.JSONObject
 import java.io.Serializable
-import java.util.*
+
 enum class FieldType(val value: String){
     Boolean("Boolean"), Text("Text"), Integer("Integer"), Decimal("Decimal"), Date("Date"), File("File"), Location("Location")
 }

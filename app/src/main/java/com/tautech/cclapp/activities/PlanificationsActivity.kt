@@ -1,8 +1,8 @@
 package com.tautech.cclapp.activities
 
-import android.content.Context
 import android.content.Intent
-import android.database.sqlite.*
+import android.database.sqlite.SQLiteConstraintException
+import android.database.sqlite.SQLiteException
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
@@ -10,7 +10,6 @@ import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import android.widget.SearchView
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.annotation.MainThread
 import androidx.appcompat.app.AlertDialog
@@ -27,7 +26,7 @@ import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.Planification
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.activity_dashboard.*
 import kotlinx.android.synthetic.main.activity_planifications.*
@@ -39,7 +38,7 @@ import org.json.JSONException
 import retrofit2.Retrofit
 import java.io.IOException
 import java.net.SocketTimeoutException
-const val KEY_USER_INFO = "userInfo"
+
 const val KEY_PROFILE_INFO = "profileInfo"
 const val KEY_DRIVER_INFO = "driverInfo"
 class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener {
@@ -49,82 +48,30 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
     private var planifications: MutableList<Planification> = mutableListOf()
     private var mAdapter: PlanificationAdapter? = null
     var db: AppDatabase? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
     private val viewModel: PlanificationsActivityViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_planifications)
         setSupportActionBar(findViewById(R.id.toolbar))
-
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.setDisplayShowHomeEnabled(true)
         findViewById<CollapsingToolbarLayout>(R.id.toolbar_layout).title = title
         swiperefresh.setOnRefreshListener {
-            fetchData(this@PlanificationsActivity::fetchUserPlanifications)
+            fetchData(this::fetchUserPlanifications)
         }
-        /*FirebaseMessaging.getInstance().token.addOnCompleteListener(OnCompleteListener { task ->
-            if (!task.isSuccessful) {
-                Log.w(TAG, "Fetching FCM registration token failed", task.exception)
-                return@OnCompleteListener
-            }
-            // Get new FCM registration token
-            val token = task.result
-            // Log and toast
-            Log.d(TAG, token)
-            Toast.makeText(baseContext, token, Toast.LENGTH_SHORT).show()
-        })*/
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(this)
-        mConfiguration = Configuration.getInstance(this)
         db = AppDatabase.getDatabase(this)
         val config = Configuration.getInstance(this)
         if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                this,
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            signOut()
+            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", true)
             return
         }
-        mAuthService = AuthorizationService(
-            this,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         initData()
-        Log.i(TAG, "Restoring state...")
-        /*if (savedInstanceState != null) {
-            try {
-                var jsonString: String? = savedInstanceState.getString(KEY_USER_INFO)
-                Log.i(TAG, "recovered user info: $jsonString")
-                if (jsonString != null) {
-                    AuthStateManager.userInfo = JSONObject(jsonString)
-                }
-                if (savedInstanceState.containsKey(KEY_PROFILE_INFO)) {
-                    AuthStateManager.keycloakUser = savedInstanceState.getSerializable(
-                        KEY_PROFILE_INFO) as KeycloakUser
-                }
-                if (savedInstanceState.containsKey(KEY_DRIVER_INFO)) {
-                    AuthStateManager.driverInfo = savedInstanceState.getSerializable(
-                        KEY_DRIVER_INFO) as Driver
-                }
-            } catch (ex: JSONException) {
-                Log.e(TAG, "Failed to parse saved user info JSON, discarding", ex)
-            } catch (ex: JsonSyntaxException) {
-                Log.e(TAG, "Failed to parse saved user info JSON, discarding", ex)
-            }
-        }
-        else*/ if (/*AuthStateManager.userInfo != null && */AuthStateManager.keycloakUser != null && AuthStateManager.driverInfo != null) {
-            fetchData(this::fetchUserPlanifications)
-        } else {
-            runOnUiThread {
-                //Log.i(TAG, "userInfo ${AuthStateManager.userInfo}")
-                Log.i(TAG, "keycloakUser ${AuthStateManager.keycloakUser}")
-                Log.i(TAG, "driverInfo ${AuthStateManager.driverInfo}")
-            }
+        if (AuthStateManager.keycloakUser == null || AuthStateManager.driverInfo == null) {
+            Log.i(TAG, "keycloakUser ${AuthStateManager.keycloakUser}")
+            Log.i(TAG, "driverInfo ${AuthStateManager.driverInfo}")
             showAlert("User Data Error", "Some user data are wrong or empty.", false)
             startActivity(Intent(this, DashboardActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
             finish()
@@ -134,6 +81,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
             planifications.clear()
             planifications.addAll(_planifications)
             mAdapter?.notifyDataSetChanged()
+            invalidateOptionsMenu()
         })
     }
 
@@ -148,33 +96,16 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         if (AuthStateManager.driverInfo != null) {
             state.putSerializable(KEY_DRIVER_INFO, AuthStateManager.driverInfo)
         }
-        /*if (AuthStateManager.userInfo != null) {
-            state.putString(KEY_USER_INFO, AuthStateManager.userInfo.toString())
-        }*/
-        // TODO: hacer posible guardar las planificaciones
-        /*if (planifications.size > 0) {
-            state.putParcelableArray("planifications", planifications)
-        }*/
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mAuthService!!.dispose()
     }
 
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching data...")
-        showLoader()
-        try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
-                callback)
-        }catch (ex: AuthorizationException) {
-            hideLoader()
-            messageTv.text = getText(R.string.parse_planifications_error)
-            messageTv.visibility = View.VISIBLE
-            showSnackbar("Error fetching data")
-            Log.e(TAG, "error fetching data", ex)
-        }
+        mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
+            callback)
     }
 
     private fun fetchUserPlanifications(
@@ -182,19 +113,12 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         idToken: String?,
         ex: AuthorizationException?,
     ) {
-        /*if (AuthStateManager.userInfo == null) {
-            Log.e(TAG, "El usuario es nulo")
-            //fetchData(this::fetchUserInfo)
-            return
-        }*/
         if (AuthStateManager.driverInfo == null) {
             Log.e(TAG, "El driver es nulo")
-            //fetchData(this@PlanificationsActivity::fetchDriverInfo)
             return
         }
-        //val today = DateTimeFormat.forPattern("yyyy-MM-dd").print(DateTime())
-        //val url = "planification/byDriver/2;planificationType-filterType=text;planificationType-type=equals;planificationType-filter=national;planificationDate-filterType=date;planificationDate-type=equals;planificationDate-dateFrom=$today;startRow=0;endRow=1000;sort-planificationDate=desc"
-        val url = "planification/byDriver/2;planificationType-filterType=text;planificationType-type=equals;planificationType-filter=national;startRow=0;endRow=1000;sort-planificationDate=desc"
+        // val url = "planification/byDriver/2;planificationType-filterType=text;planificationType-type=equals;planificationType-filter=national;startRow=0;endRow=1000;sort-planificationDate=desc"
+        val url = "planificationVO2s/search/findByDriverIdAndPlanificationType?driverId=${mStateManager?.driverInfo?.id}&planificationType=National"
         Log.i(TAG, "planifications endpoint: $url")
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
@@ -202,9 +126,10 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         if (dataService != null && accessToken != null) {
             doAsync {
                 try {
-                    val call = dataService.getPlanifications(url, "Bearer $accessToken", AuthStateManager.driverInfo.id).execute()
+                    //val call = dataService.getPlanifications(url, "Bearer $accessToken", AuthStateManager.driverInfo.id).execute()
+                    val call = dataService.getPlanifications(url, "Bearer $accessToken").execute()
                     val response = call.body()
-                    val allPlanifications = response?.content ?: listOf()
+                    val allPlanifications = response?._embedded?.planificationVO2s ?: listOf()
                     val planifications = allPlanifications.filter{
                         it.state == "Dispatched" || it.state == "OnGoing"
                     }
@@ -214,7 +139,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                         mAdapter?.notifyDataSetChanged()
                     }
                     hideLoader()
-                    if (planifications.size == 0) {
+                    if (planifications.isEmpty()) {
                         uiThread {
                             messageTv.text = getText(R.string.no_planifications)
                             messageTv.visibility = View.VISIBLE
@@ -243,9 +168,9 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                         }
                     }
                 } catch (ioEx: IOException) {
+                    hideLoader()
+                    showSnackbar(getString(R.string.error_fetching_planifications))
                     uiThread {
-                        hideLoader()
-                        showSnackbar(getString(R.string.error_fetching_planifications))
                         messageTv.text = getText(R.string.network_error)
                         messageTv.visibility = View.VISIBLE
                         Log.e(TAG, "Network error when querying planifications endpoint", ioEx)
@@ -282,31 +207,18 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
 
     private fun showSnackbar(message: String) {
         runOnUiThread {
-        Snackbar.make(cordinator,
-            message,
-            Snackbar.LENGTH_SHORT)
-            .show()
+            if(!isFinishing && !isDestroyed) {
+                Snackbar.make(cordinator,
+                    message,
+                    Snackbar.LENGTH_SHORT)
+                    .show()
+            }
         }
     }
 
     private fun signOut() {
-        // discard the authorization and token state, but retain the configuration and
-        // dynamic client registration (if applicable), to save from retrieving them again.
-        val currentState = mStateManager!!.current
-        val clearedState = AuthState(currentState.authorizationServiceConfiguration!!)
-        if (currentState.lastRegistrationResponse != null) {
-            clearedState.update(currentState.lastRegistrationResponse)
-        }
-        mStateManager!!.replace(clearedState)
-        val mainIntent = Intent(this, LoginActivity::class.java)
-        val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
-        with(sharedPref.edit()) {
-            putBoolean("isLoggedIn", false)
-            commit()
-        }
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        finish()
+        mStateManager?.signOut(this)
+        //finish()
     }
 
     fun initData() {
@@ -326,13 +238,14 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         super.onResume()
         Log.i(TAG, "on resume...")
         initData()
+        mStateManager?.revalidateSessionData(this)
         if (AuthStateManager.keycloakUser != null && AuthStateManager.driverInfo != null) {
             if (planifications.isNullOrEmpty()) {
                 fetchData(this::fetchUserPlanifications)
             } else {
                 showLoader()
                 doAsync {
-                    val allPlanifications = db?.planificationDao()?.getAllByTypeAndDriver("Urban", mStateManager?.driverInfo?.id)
+                    val allPlanifications = db?.planificationDao()?.getAllByTypeAndDriver("National", mStateManager?.driverInfo?.id)
                     val planifications = allPlanifications?.filter{
                         it.state == "Dispatched" || it.state == "OnGoing"
                     }
@@ -340,9 +253,6 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                     viewModel.planifications.postValue(planifications?.toMutableList())
                     Log.i(TAG, "planifications loaded from local DB: $planifications")
                     hideLoader()
-                    uiThread {
-                        mAdapter?.notifyDataSetChanged()
-                    }
                 }
             }
         } else {
@@ -388,7 +298,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
             Log.e(TAG, "Client authentication method is unsupported")
             return
         }
-        mAuthService!!.performTokenRequest(
+        mStateManager?.mAuthService!!.performTokenRequest(
             request,
             clientAuthentication,
             callback)
@@ -449,10 +359,12 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
             builder.setMessage(message)
             builder.setPositiveButton("Aceptar", null)
             val dialog: AlertDialog = builder.create();
-            dialog.show();
-            dialog.setOnDismissListener {
-                if (exitToLogin) {
-                    signOut()
+            if(!isFinishing && !isDestroyed) {
+                dialog.show();
+                dialog.setOnDismissListener {
+                    if (exitToLogin) {
+                        signOut()
+                    }
                 }
             }
         }
@@ -486,19 +398,14 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
 
     private fun filterPlanifications(query: String?) {
         Log.i(TAG, "filtering planifications")
-        planifications.clear()
         val filtered = viewModel.planifications.value?.filter{
-            query == null || it.address?.toLowerCase()?.contains(query) == true || it.customerName?.toLowerCase()?.contains(query) == true ||
-                    it.date?.toLowerCase()?.contains(query) == true || it.driverName?.toLowerCase()?.contains(query) == true ||
+            query == null || it.address?.toLowerCase()?.contains(query) == true || it.dispatchDate?.toLowerCase()?.contains(query) == true ||
                     it.label?.toLowerCase()?.contains(query) == true || it.planificationType?.toLowerCase()?.contains(query) == true ||
-                    it.state?.toLowerCase()?.contains(query) == true || it.vehicleLicensePlate?.toLowerCase()?.contains(query) == true ||
-                    it.vehicleType?.toLowerCase()?.contains(query) == true
+                    it.state?.toLowerCase()?.contains(query) == true || it.licensePlate?.toLowerCase()?.contains(query) == true
         }!!
         Log.i(TAG, "filtered results ${filtered.size}")
-        planifications.addAll(filtered)
+        viewModel.planifications.postValue(filtered.toMutableList())
         searchStr = query ?: ""
-        mAdapter?.notifyDataSetChanged()
-        invalidateOptionsMenu()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -530,7 +437,6 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
     }
 
     override fun onRefresh() {
-        searchStr = ""
-        fetchData(this@PlanificationsActivity::fetchUserPlanifications)
+        Log.i(TAG, "refreshing data...")
     }
 }

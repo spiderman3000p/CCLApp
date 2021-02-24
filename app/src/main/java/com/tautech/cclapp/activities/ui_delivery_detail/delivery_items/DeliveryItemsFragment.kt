@@ -17,9 +17,9 @@ import com.google.android.material.snackbar.Snackbar
 import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.DeliveryDetailActivity
 import com.tautech.cclapp.activities.DeliveryDetailActivityViewModel
-import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.DeliveryLineItemAdapter
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_delivery_items.*
@@ -51,16 +51,16 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
     initAdapter()
     viewModel.delivery.observe(viewLifecycleOwner, Observer{_delivery ->
       filteredData.clear()
-      filteredData.addAll(_delivery.detail)
+      filteredData.addAll(viewModel.deliveryLines.value!!)
       mAdapter?.notifyDataSetChanged()
     })
     searchEt4.setOnKeyListener { v, keyCode, event ->
       if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
-        if (searchEt4.text.length > 0) {
+        if (searchEt4.text.isNotEmpty()) {
           searchData(searchEt4.text.toString())
         } else {
           filteredData.clear()
-          filteredData.addAll(viewModel.delivery.value?.detail!!)
+          filteredData.addAll(viewModel.deliveryLines.value!!)
         }
         mAdapter?.notifyDataSetChanged()
       }
@@ -226,11 +226,11 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
     Log.i(TAG, "barcode readed: $barcode")
     var foundDeliveryLines: List<DeliveryLine> = listOf()
     //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
-    if (!barcode.isNullOrEmpty()) {
-      foundDeliveryLines = viewModel.delivery.value?.detail?.filter { d ->
+    if (barcode.isNotEmpty()) {
+      foundDeliveryLines = viewModel.deliveryLines.value?.filter { d ->
         d.packetType.toLowerCase().contains(barcode.toLowerCase()) ||
         d.reference.toLowerCase().contains(barcode.toLowerCase()) ||
-        d.referenceDescription.toLowerCase().contains(barcode.toLowerCase()) ||
+        d.description.toLowerCase().contains(barcode.toLowerCase()) ||
         d.weight.toString().toLowerCase().contains(barcode.toLowerCase())
       }!!
     } else {

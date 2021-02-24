@@ -3,7 +3,10 @@ package com.tautech.cclapp.activities.ui_urban.pending
 import android.content.DialogInterface
 import android.os.Bundle
 import android.util.Log
-import android.view.*
+import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -15,10 +18,11 @@ import com.google.android.material.snackbar.Snackbar
 import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
-import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.PlanificationLineAdapter
+import com.tautech.cclapp.models.Delivery
 import com.tautech.cclapp.models.PlanificationLine
 import kotlinx.android.synthetic.main.fragment_pending_urban.*
 import org.jetbrains.anko.doAsync
@@ -29,7 +33,7 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
     private var barcodeManager: BarcodeManager? = null;
     private var scanner: Scanner? = null;
     private val viewModel: PlanificationDetailActivityViewModel by activityViewModels()
-    private var filteredData: MutableList<PlanificationLine> = mutableListOf()
+    private var filteredData: MutableList<Delivery> = mutableListOf()
     val TAG = "PENDING_DELIVERIES_FRAGMENT"
     private var mAdapter: PlanificationLineAdapter? = null
     override fun onCreateView(
@@ -231,11 +235,11 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
 
     fun searchData(barcode: String) {
         Log.i(TAG, "barcode readed: $barcode")
-        var foundDeliveryLines: List<PlanificationLine> = listOf()
+        var foundDeliveryLines: List<Delivery> = listOf()
         //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
-        if (!barcode.isNullOrEmpty()) {
+        if (barcode.isNotEmpty()) {
             foundDeliveryLines = viewModel.deliveries.value!!.filter { d ->
-                d.id == barcode.toLong() && listOf("OnGoing", "Dispatched", "Created", "Planned", "DeliveryPlanned", "ReDispatched").contains(d.deliveryState)
+                d.deliveryId == barcode.toLong() && listOf("OnGoing", "Dispatched", "Created", "Planned", "DeliveryPlanned", "ReDispatched").contains(d.deliveryState)
             }
         } else {
             Log.e(TAG, "Error con datos de entrada")

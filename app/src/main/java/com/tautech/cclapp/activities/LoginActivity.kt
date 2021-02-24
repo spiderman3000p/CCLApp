@@ -25,9 +25,7 @@ class LoginActivity : AppCompatActivity() {
     private val mUsePendingIntents: Boolean = false
     private val EXTRA_FAILED = "failed"
     private val RC_AUTH = 100
-    private var mAuthService: AuthorizationService? = null
     private lateinit var mAuthStateManager: AuthStateManager
-    private lateinit var mConfiguration: Configuration
     private var mClientId: String? = null
     private var mAuthRequest: AuthorizationRequest? = null
     private var mAuthIntent: CustomTabsIntent? = null
@@ -66,17 +64,16 @@ class LoginActivity : AppCompatActivity() {
             return
         }
         mAuthStateManager = AuthStateManager.getInstance(this)
-        mConfiguration = Configuration.getInstance(this)
-        if (!mConfiguration.isValid) {
+        if (!mAuthStateManager.mConfiguration.isValid) {
             //displayError(mConfiguration.getConfigurationError(), false)
             Log.e(TAG, "Error en configuracion de auth manager")
             //return
         }
-        if (mConfiguration.hasConfigurationChanged()) {
+        if (mAuthStateManager.mConfiguration.hasConfigurationChanged()) {
             // discard any existing authorization state due to the change of configuration
             Log.i(TAG, "Configuration change detected, discarding old state")
             mAuthStateManager.replace(AuthState())
-            mConfiguration.acceptConfiguration()
+            mAuthStateManager.mConfiguration.acceptConfiguration()
         }
 
         loginBtn.setOnClickListener {
@@ -85,7 +82,7 @@ class LoginActivity : AppCompatActivity() {
             doAuth()
         }
         initializeAppAuth()
-        if (mAuthStateManager.getCurrent().isAuthorized && !mConfiguration.hasConfigurationChanged()) {
+        if (mAuthStateManager.getCurrent().isAuthorized && !mAuthStateManager.mConfiguration.hasConfigurationChanged()) {
             Log.i(TAG, "User is already authenticated, proceeding to token activity")
             doAuth()
             return
@@ -96,10 +93,10 @@ class LoginActivity : AppCompatActivity() {
         Log.i(TAG, "Creating auth request for login")
         val authRequestBuilder = AuthorizationRequest.Builder(
             mAuthStateManager.current.authorizationServiceConfiguration!!,
-            mConfiguration.clientId!!,
+            mAuthStateManager.mConfiguration.clientId!!,
             ResponseTypeValues.CODE,
-            mConfiguration.redirectUri)
-            .setScope(mConfiguration.scope)
+            mAuthStateManager.mConfiguration.redirectUri)
+            .setScope(mAuthStateManager.mConfiguration.scope)
         val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
         if (sharedPref.contains("isLoggedIn") && !sharedPref.getBoolean("isLoggedIn", false)) {
             authRequestBuilder.setPromptValues("login")
@@ -108,11 +105,11 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun recreateAuthorizationService() {
-        if (mAuthService != null) {
+        if (mAuthStateManager.mAuthService != null) {
             Log.i(TAG, "Discarding existing AuthService instance")
-            mAuthService?.dispose()
+            mAuthStateManager.mAuthService?.dispose()
         }
-        mAuthService = createAuthorizationService()
+        mAuthStateManager.mAuthService = createAuthorizationService()
     }
 
     private fun createAuthorizationService(): AuthorizationService {
@@ -140,12 +137,12 @@ class LoginActivity : AppCompatActivity() {
 
         // if we are not using discovery, build the authorization service configuration directly
         // from the static configuration values.
-        if (mConfiguration.discoveryUri == null) {
+        if (mAuthStateManager.mConfiguration.discoveryUri == null) {
             Log.i(TAG, "Creating auth config from res/raw/auth_config.json")
             val config = AuthorizationServiceConfiguration(
-                mConfiguration.authEndpointUri!!,
-                mConfiguration.tokenEndpointUri!!,
-                mConfiguration.registrationEndpointUri)
+                mAuthStateManager.mConfiguration.authEndpointUri!!,
+                mAuthStateManager.mConfiguration.tokenEndpointUri!!,
+                mAuthStateManager.mConfiguration.registrationEndpointUri)
             mAuthStateManager.replace(AuthState(config))
             initializeClient()
             return
@@ -153,10 +150,10 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun initializeClient() {
-        if (mConfiguration.clientId != null) {
-            Log.i(TAG, "Using static client ID: " + mConfiguration.clientId)
+        if (mAuthStateManager.mConfiguration.clientId != null) {
+            Log.i(TAG, "Using static client ID: " + mAuthStateManager.mConfiguration.clientId)
             // use a statically configured client ID
-            mClientId = mConfiguration.clientId
+            mClientId = mAuthStateManager.mConfiguration.clientId
             initializeAuthRequest()
             return
         }
@@ -192,10 +189,8 @@ class LoginActivity : AppCompatActivity() {
         mAuthIntentLatch = CountDownLatch(1)
         Log.i(TAG, "Warming up browser instance for auth request")
         val intentBuilder =
-            mAuthService?.createCustomTabsIntentBuilder(mAuthRequest?.toUri())
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            intentBuilder?.setToolbarColor(getColor(R.color.material_on_primary_emphasis_medium))
-        }
+            mAuthStateManager.mAuthService?.createCustomTabsIntentBuilder(mAuthRequest?.toUri())
+        intentBuilder?.setToolbarColor(getColor(R.color.material_on_primary_emphasis_medium))
         mAuthIntent = intentBuilder?.build()
         mAuthIntentLatch.countDown()
     }
@@ -211,13 +206,13 @@ class LoginActivity : AppCompatActivity() {
             val cancelIntent = Intent(this, LoginActivity::class.java)
             cancelIntent.putExtra(EXTRA_FAILED, true)
             cancelIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-            mAuthService?.performAuthorizationRequest(
+            mAuthStateManager.mAuthService?.performAuthorizationRequest(
                 mAuthRequest!!,
                 PendingIntent.getActivity(this, 0, completionIntent, 0),
                 PendingIntent.getActivity(this, 0, cancelIntent, 0),
                 mAuthIntent!!)
         } else {
-            val intent = mAuthService?.getAuthorizationRequestIntent(
+            val intent = mAuthStateManager.mAuthService?.getAuthorizationRequestIntent(
                 mAuthRequest!!,
                 mAuthIntent!!)
             startActivityForResult(intent, RC_AUTH)

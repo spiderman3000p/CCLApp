@@ -1,12 +1,12 @@
-package com.tautech.cclapp.ui.main
+package com.tautech.cclapp.adapters
 
 import android.content.Context
 import android.util.Log
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentPagerAdapter
-import com.tautech.cclapp.activities.ManageDeliveryItemsFragment
 import com.tautech.cclapp.R
+import com.tautech.cclapp.activities.ManageDeliveryItemsFragment
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
 
 private val TAB_TITLES = arrayOf(

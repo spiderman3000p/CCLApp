@@ -7,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.recyclerview.widget.RecyclerView
 import com.tautech.cclapp.R
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.delivery_line_item.view.*
 import kotlinx.android.synthetic.main.last_readed_item.view.referenceTv
 import kotlinx.android.synthetic.main.last_readed_item.view.skuDescriptionTv
@@ -19,7 +19,7 @@ class DeliveryLineItemAdapter(private val dataList: MutableList<DeliveryLine>, v
         var deliveryLine: DeliveryLine? = null
         fun bindItems(_deliveryLine: DeliveryLine, editable: Boolean = false) {
             deliveryLine = _deliveryLine
-            itemView.skuDescriptionTv .text = deliveryLine?.referenceDescription
+            itemView.skuDescriptionTv .text = deliveryLine?.description
             itemView.referenceTv.text = deliveryLine?.reference
             if (!editable) {
                 itemView.quantitySeekBar.visibility = View.GONE

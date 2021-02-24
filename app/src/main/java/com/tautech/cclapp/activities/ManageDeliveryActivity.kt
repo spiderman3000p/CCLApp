@@ -1,54 +1,58 @@
 package com.tautech.cclapp.activities
 
 import android.content.DialogInterface
-import android.content.Intent
-import android.database.sqlite.*
+import android.database.sqlite.SQLiteAccessPermException
+import android.database.sqlite.SQLiteCantOpenDatabaseException
+import android.database.sqlite.SQLiteDatabaseLockedException
 import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
-import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.tabs.TabLayout
-import androidx.viewpager.widget.ViewPager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
+import androidx.viewpager.widget.ViewPager
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkRequest
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.tabs.TabLayout
 import com.tautech.cclapp.R
+import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
+import com.tautech.cclapp.classes.UploadFilesWorker
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.services.CclClient
-import com.tautech.cclapp.ui.main.SectionsPagerAdapter
-import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
 import com.tautech.cclapp.models.*
+import com.tautech.cclapp.services.CclClient
+import com.tautech.cclapp.services.MyWorkerManagerService
+import com.tautech.cclapp.adapters.SectionsPagerAdapter
 import kotlinx.android.synthetic.main.activity_manage_delivery.*
 import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
 import okhttp3.MultipartBody
 import org.jetbrains.anko.contentView
 import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
+import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
 
 class ManageDeliveryActivity : AppCompatActivity() {
     private var filesSaved: Boolean = false
     private var savedItems: Boolean = false
-    private var deliveredItemList: List<Any>? = null
+    private var deliveredItemList: List<DeliveredItemToUpload>? = null
     private var savedFormId: Int? = null
     val TAG = "MANAGE_DELIVERY_ACTIVITY"
     var planification: Planification? = null
-    var delivery: PlanificationLine? = null
+    var delivery: Delivery? = null
     var formDataWithoutFiles: StateForm? = null
-    var formDataWithFiles: StateForm? = null
+    var formDataWithFiles: ArrayList<Item>? = null
     private var retrofitClient: Retrofit? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
     var db: AppDatabase? = null
     private val viewModel: ManageDeliveryActivityViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +76,6 @@ class ManageDeliveryActivity : AppCompatActivity() {
         supportActionBar?.setDisplayShowHomeEnabled(true)
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(this)
-        mConfiguration = Configuration.getInstance(this)
         val config = Configuration.getInstance(this)
         try {
             db = AppDatabase.getDatabase(this)
@@ -84,23 +87,11 @@ class ManageDeliveryActivity : AppCompatActivity() {
             Log.e(TAG, "Database error found", ex)
         }
         if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                this,
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            signOut()
+            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
             return
         }
-        mAuthService = AuthorizationService(
-            this,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         if (!mStateManager!!.current.isAuthorized) {
-            showAlert(getString(R.string.error), getString(R.string.unauthorized_user))
-            Log.i(TAG, "No hay autorizacion para el usuario")
-            signOut()
+            showAlert("Error", "Su sesion ha expirado", this::signOut)
             return
         }
         viewModel.state.observe(this, Observer{newState ->
@@ -131,7 +122,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 finish()
             }
             if (extras.containsKey("delivery")) {
-                delivery = extras.getSerializable("delivery") as PlanificationLine
+                delivery = extras.getSerializable("delivery") as Delivery
                 viewModel.delivery.postValue(delivery)
             } else {
                 showAlert(getString(R.string.error), getString(R.string.no_delivery_received))
@@ -158,20 +149,6 @@ class ManageDeliveryActivity : AppCompatActivity() {
             showAlert(getString(R.string.error), getString(R.string.no_data_received))
             finish()
         }
-        /*if (savedInstanceState != null) {
-            if (savedInstanceState.containsKey("delivery")) {
-                delivery = savedInstanceState.getSerializable("delivery") as PlanificationLine
-                viewModel.delivery.postValue(delivery)
-            }
-            if (savedInstanceState.containsKey("planification")) {
-                planification = savedInstanceState.getSerializable("planification") as Planification
-                viewModel.planification.postValue(planification)
-            }
-            if (savedInstanceState.containsKey("stateFormDefinitions")) {
-                val stateFormDefinitions = savedInstanceState.getSerializable("stateFormDefinitions") as MutableList<StateFormDefinition>
-                viewModel.stateFormDefinitions.postValue(stateFormDefinitions)
-            }
-        }*/
     }
 
     fun checkDoneBtnStatus(){
@@ -183,20 +160,24 @@ class ManageDeliveryActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.i(TAG, "onResume()...")
+        mStateManager?.revalidateSessionData(this)
         showLoader()
         doAsync {
             if (planification == null) {
                 loadPlanification(planification?.id)
             }
             if (delivery == null) {
-                loadDelivery(delivery?.id)
+                loadDelivery(delivery?.deliveryId)
+            }
+            if (viewModel.deliveryLines.value.isNullOrEmpty()){
+                loadDeliveryLines()
             }
             hideLoader()
         }
     }
 
     fun loadPlanification(planificationId: Long?){
-        val _planification = db?.planificationDao()?.getById(planificationId?.toInt()!!)
+        val _planification = db?.planificationDao()?.getById(planificationId!!)
         viewModel.planification.postValue(_planification)
         Log.i(TAG, "planification loaded from local DB: $_planification")
     }
@@ -206,27 +187,29 @@ class ManageDeliveryActivity : AppCompatActivity() {
         val _delivery = db?.deliveryDao()?.getById(deliveryId)
         if (_delivery != null) {
             Log.i(TAG, "loadDelivery delivery loaded from bd local: $_delivery")
-            val deliveryLines = db?.deliveryDao()?.getGroupedLines(deliveryId!!) ?: listOf()
-            if (!deliveryLines.isNullOrEmpty()) {
-                Log.i(TAG, "deliveryLines cargadas de la bd local: $deliveryLines")
-                when (viewModel.state.value) {
-                    "Delivered" -> {
-                        deliveryLines.forEach { deliveryLine ->
-                            deliveryLine.deliveredQuantity = deliveryLine.quantity
-                        }
-                    }
-                    "UnDelivered" -> {
-                        deliveryLines.forEach { deliveryLine ->
-                            deliveryLine.deliveredQuantity = 0
-                        }
-                    }
-                }
-                _delivery.detail.addAll(deliveryLines)
-            }
             viewModel.delivery.postValue(_delivery)
         }
-        checkDoneBtnStatus()
         Log.i(TAG, "delivery loaded from local DB: $_delivery")
+    }
+
+    fun loadDeliveryLines(){
+        val deliveryLines = db?.deliveryDao()?.getGroupedLines(delivery?.deliveryId!!) ?: listOf()
+        if (!deliveryLines.isNullOrEmpty()) {
+            Log.i(TAG, "deliveryLines cargadas de la bd local: $deliveryLines")
+            when (viewModel.state.value) {
+                "Delivered" -> {
+                    deliveryLines.forEach { deliveryLine ->
+                        deliveryLine.deliveredQuantity = deliveryLine.quantity
+                    }
+                }
+                "UnDelivered" -> {
+                    deliveryLines.forEach { deliveryLine ->
+                        deliveryLine.deliveredQuantity = 0
+                    }
+                }
+            }
+            viewModel.deliveryLines.postValue(deliveryLines.toMutableList())
+        }
     }
 
     override fun onSaveInstanceState(state: Bundle) {
@@ -239,10 +222,6 @@ class ManageDeliveryActivity : AppCompatActivity() {
         }
         if (delivery != null) {
             state.putSerializable("delivery", delivery)
-        }
-        if (viewModel.stateFormDefinition.value != null) {
-            // TODO: arreglar esto
-            //state.putSerializable("stateFormDefinitions", viewModel.stateFormDefinitions.value)
         }
     }
 
@@ -288,31 +267,25 @@ class ManageDeliveryActivity : AppCompatActivity() {
             Log.i(TAG, "form data with files generated: $formDataWithFiles")
             Log.i(TAG, "item list generated: $deliveredItemList")
             saveDeliveryStateFormWithoutFiles()
-            /*val uploadWorkRequest: WorkRequest =
-                OneTimeWorkRequestBuilder<UploadFilesWorker>()
-                    .build()
-            WorkManager
-                .getInstance(applicationContext)
-                .enqueue(uploadWorkRequest)*/
         } else {
             Toast.makeText(this, getString(R.string.no_state_form_found), Toast.LENGTH_SHORT).show()
         }
     }
 
-    fun generateDeliveredItemList(): List<Any> {
-        return viewModel.delivery.value?.detail?.map {deliveryLine ->
-            object {
-                val quantity = deliveryLine.deliveredQuantity
-                val price = deliveryLine.price
-                val deliveryLine = "${CclClient.BASE_URL}deliveryLines/${deliveryLine.id}"
-            }
-        } ?: listOf()
+    fun generateDeliveredItemList(): List<DeliveredItemToUpload>? {
+        return viewModel.deliveryLines.value?.map {deliveryLine ->
+            DeliveredItemToUpload(
+                quantity = deliveryLine.deliveredQuantity,
+                price = deliveryLine.price,
+                deliveryLineId = deliveryLine.id
+            )
+        }
     }
 
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching user planifications...")
         try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
+            mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
                 callback)
         }catch (ex: AuthorizationException) {
             Log.e(TAG, "error fetching data", ex)
@@ -326,71 +299,19 @@ class ManageDeliveryActivity : AppCompatActivity() {
             Log.e(TAG, "el formulario sin archivos es invalido")
         }
     }
-
-    fun saveDeliveryStateFormWithFiles() {
-        fetchData(this::saveDeliveryStateFormWithFiles)
-    }
     
-    private fun saveDeliveryStateFormWithFiles(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
-        if (ex != null) {
-            Log.e(TAG, "Token refresh failed", ex)
-            AuthStateManager.driverInfo = null
-            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Error", "Sesion Expirada", this::signOut)
-            }
-            return
-        }
+    private fun saveDeliveryStateFormWithFiles() {
         Log.i(TAG, "trying to upload form files...")
         showLoader()
-        val dataService: CclDataService? = CclClient.getInstance()?.create(
-            CclDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            var cont = 0
-            formDataWithFiles?.data?.forEach { item ->
-                if (item.value != null && item.value is MultipartBody.Part) {
-                    Log.i(TAG, "uploading file ${item.name}:${item.value}...")
-                    val urlSaveForm =
-                        "delivery/state-history/upload-file/${savedFormId}?propertyName=${item.name}"
-                    /*val photoURI: Uri = FileProvider.getUriForFile(
-                        this,
-                        "com.tautech.cclapp.fileprovider",
-                        item.value as File
-                    )*/
-                    doAsync {
-                        showSnackbar("guardando ${item.name}: ")
-                        try {
-                            val callSaveForm = dataService.savePlanificationStateFormFile(urlSaveForm,
-                                item.value as MultipartBody.Part,
-                                viewModel.planification.value?.customerId,
-                                "Bearer $accessToken")
-                                .execute()
-                            hideLoader()
-                            //val responseSaveForm = callSaveForm.body()
-                            Log.i(TAG, "save file ${item.name} response ${callSaveForm.code()}")
-                            if (callSaveForm.code() == 200 || callSaveForm.code() == 201 || callSaveForm.code() == 202) {
-                                if(cont == formDataWithFiles?.data?.size!! - 1){
-                                    filesSaved = true
-                                    finishActivity()
-                                }
-                            }
-                        } catch(toe: SocketTimeoutException) {
-                            hideLoader()
-                            Log.e(TAG, "Network error when saving ${item.name} file", toe)
-                            showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
-                        } catch (ioEx: IOException) {
-                            hideLoader()
-                            Log.e(TAG,
-                                "Network error when saving ${item.name} file",
-                                ioEx)
-                            showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
-                        }
-                    }
-                } else {
-                    showSnackbar(getString(R.string.invalid_file_for, item.name))
-                }
-                cont++
+        formDataWithFiles?.forEach { item ->
+            if (item.value != null && item.value is File) {
+                MyWorkerManagerService.enqueSingleFileUpload(this, item, savedFormId, viewModel.planification.value?.customerId)
+            } else {
+                showSnackbar(getString(R.string.invalid_file_for, item.name))
             }
         }
+        filesSaved = true
+        finishActivity()
     }
 
     fun saveDeliveredItemList() {
@@ -403,10 +324,9 @@ class ManageDeliveryActivity : AppCompatActivity() {
 
     private fun saveDeliveredItemList(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed", ex)
-            AuthStateManager.driverInfo = null
+            Log.e(TAG, "ocurrio una excepcion mientras se guardaban los items entregados", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Error", "Sesion Expirada", this::signOut)
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -414,26 +334,23 @@ class ManageDeliveryActivity : AppCompatActivity() {
         showLoader()
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            val url = "deliveredItems"
+        if (dataService != null && accessToken != null && deliveredItemList != null) {
+            val url = "delivery/addDeliveredItems"
             doAsync {
                 try {
                     val call = dataService.saveDeliveredItems(url,
-                        deliveredItemList!!,
-                        viewModel.planification.value?.customerId,
+                        deliveredItemList,
                         "Bearer $accessToken")
                         .execute()
                     hideLoader()
-                    val response = call.body()
-                    Log.i(TAG, "save delivered items response $response")
-                    if (response != null) {
-                        delivery?.detail?.forEach { deliveryLine ->
-                            db?.deliveryLineDao()?.insert(deliveryLine)
-                        }
+                    Log.i(TAG, "save delivered items response code ${call.code()}")
+                    if (call.code() == 200) {
+                        db?.deliveryLineDao()?.insertAll(viewModel.deliveryLines.value!!)
+                        viewModel.deliveryLines.postValue(viewModel.deliveryLines.value)
                         viewModel.delivery.postValue(delivery)
                         savedItems = true
-                        finishActivity()
                         showSnackbar(getString(R.string.delivered_items_saved))
+                        finishActivity()
                     }
                 } catch(toe: SocketTimeoutException) {
                     hideLoader()
@@ -445,6 +362,10 @@ class ManageDeliveryActivity : AppCompatActivity() {
                         "Network error when saving delivered items",
                         ioEx)
                     showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                } catch(ex: Exception){
+                    hideLoader()
+                    Log.e(TAG,"Error desconocido al itentar guardar items", ex)
+                    showAlert(getString(R.string.error), getString(R.string.unknown_error))
                 }
             }
         }
@@ -452,10 +373,9 @@ class ManageDeliveryActivity : AppCompatActivity() {
     
     private fun saveDeliveryStateFormWithoutFiles(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed", ex)
-            AuthStateManager.driverInfo = null
+            Log.e(TAG, "ocurrio una excepcion mientras se guardaba el formulario", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Error", "Sesion Expirada", this::signOut)
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -463,7 +383,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
         if (dataService != null && accessToken != null) {
-            val urlSaveForm = "delivery/${delivery?.id}/state-history"
+            val urlSaveForm = "delivery/${delivery?.deliveryId}/state-history"
             val formDataWithoutFiles = formDataWithoutFiles
             doAsync {
                 showSnackbar(getString(R.string.saving_form))
@@ -531,22 +451,12 @@ class ManageDeliveryActivity : AppCompatActivity() {
     }
 
     private fun signOut() {
-        // discard the authorization and token state, but retain the configuration and
-        // dynamic client registration (if applicable), to save from retrieving them again.
-        val currentState = mStateManager!!.current
-        val clearedState = AuthState(currentState.authorizationServiceConfiguration!!)
-        if (currentState.lastRegistrationResponse != null) {
-            clearedState.update(currentState.lastRegistrationResponse)
-        }
-        mStateManager!!.replace(clearedState)
-        val mainIntent = Intent(this, LoginActivity::class.java)
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        finish()
+        mStateManager?.signOut(this)
+        //finish()
     }
 
     fun finishActivity(){
-        if(savedFormId != null && savedItems == true && ((formDataWithFiles != null && filesSaved == true) || formDataWithFiles == null)){
+        if(savedFormId != null && savedItems == true && ((!formDataWithFiles.isNullOrEmpty() && filesSaved == true) || formDataWithFiles.isNullOrEmpty())){
             finish()
         }
     }

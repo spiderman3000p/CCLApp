@@ -8,7 +8,6 @@
     tools:context=".activities.ui_delivery_detail.delivery_detail.DeliveryDetailFragment">
 
     <androidx.constraintlayout.widget.ConstraintLayout
-        android:id="@+id/frameLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/gradient_blue">
@@ -18,7 +17,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="5dp"
-            android:layout_marginEnd="10dp"
             android:checkable="false"
             android:checked="false"
             android:elegantTextHeight="false"
@@ -30,6 +28,8 @@
             app:checkedIconVisible="false"
             app:chipBackgroundColor="#E48814"
             app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
         <LinearLayout
@@ -48,7 +48,6 @@
                 android:id="@+id/planificationTypeTv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="National"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 android:textStyle="bold" />
@@ -58,7 +57,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
-                android:text="Navidad Electrolux"
                 android:textAppearance="@style/TextAppearance.AppCompat.Display1"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
@@ -66,14 +64,13 @@
                 android:typeface="normal" />
 
             <TextView
-                android:id="@+id/planificationDateTv"
+                android:id="@+id/dateTv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
                 android:drawableLeft="@drawable/ic_clock___1315_"
                 android:drawablePadding="10dp"
                 android:drawableTint="#FFFFFF"
-                android:text="2021-01-18"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
 
@@ -85,7 +82,6 @@
                 android:drawableLeft="@drawable/ic_profile_round___1342_"
                 android:drawablePadding="10dp"
                 android:drawableTint="#FFFFFF"
-                android:text="Electrolux"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
 
@@ -97,7 +93,6 @@
                 android:drawableLeft="@drawable/ic_steering_wheel___666_"
                 android:drawablePadding="10dp"
                 android:drawableTint="#FFFFFF"
-                android:text="Gerardo Garcia"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
 
@@ -109,7 +104,6 @@
                 android:drawableLeft="@drawable/ic_truck_round"
                 android:drawablePadding="10dp"
                 android:drawableTint="#FFFFFF"
-                android:text="LPTJ878"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
 
@@ -188,10 +182,9 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="right|top"
                         android:layout_marginTop="-7dp"
-                        android:text="0/100" />
+                        android:text="0" />
 
                     <TextView
-                        android:id="@+id/totalItemsTv"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
@@ -239,7 +232,7 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="right|top"
                         android:layout_marginTop="-7dp"
-                        android:text="0/100" />
+                        android:text="0" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -271,7 +264,7 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="right|top"
                         android:layout_marginTop="-7dp"
-                        android:text="1258.55 Kg" />
+                        android:text="0 Kg" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -303,7 +296,7 @@
                         android:layout_height="wrap_content"
                         android:layout_gravity="right|top"
                         android:layout_marginTop="-7dp"
-                        android:text="257832.56 $" />
+                        android:text="0 $" />
 
                     <TextView
                         android:layout_width="wrap_content"

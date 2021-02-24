@@ -24,14 +24,16 @@ import androidx.appcompat.widget.SwitchCompat
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.gms.maps.model.LatLng
-import com.tautech.cclapp.*
-import com.tautech.cclapp.activities.*
+import com.tautech.cclapp.R
+import com.tautech.cclapp.activities.CreateSignatureActivity
+import com.tautech.cclapp.activities.ManageDeliveryActivity
+import com.tautech.cclapp.activities.ManageDeliveryActivityViewModel
+import com.tautech.cclapp.activities.MapsActivity
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.classes.DatePickerFragmentDialog
@@ -43,9 +45,6 @@ import kotlinx.android.synthetic.main.fragment_delivery_form.*
 import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
-import okhttp3.MediaType
-import okhttp3.MultipartBody
-import okhttp3.RequestBody
 import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
 import java.io.File
@@ -67,9 +66,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
   val TAG = "DELIVERY_FORM_FRAGMENT"
   val createdControls = HashMap<Int, FieldValueContainer>()
   private var retrofitClient: Retrofit? = null
-  private var mAuthService: AuthorizationService? = null
   private var mStateManager: AuthStateManager? = null
-  private var mConfiguration: Configuration? = null
   var db: AppDatabase? = null
   override fun onCreateView(
     inflater: LayoutInflater,
@@ -80,7 +77,6 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     Log.i(TAG, "onCreateView DeliveryFormFragment")
     retrofitClient = CclClient.getInstance()
     mStateManager = AuthStateManager.getInstance(requireContext())
-    mConfiguration = Configuration.getInstance(requireContext())
     val config = Configuration.getInstance(requireContext())
     try {
       db = AppDatabase.getDatabase(requireContext())
@@ -92,21 +88,10 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
       Log.e(TAG, "Database error found", ex)
     }
     if (config.hasConfigurationChanged()) {
-      Toast.makeText(
-        requireContext(),
-        "Configuration change detected",
-        Toast.LENGTH_SHORT)
-        .show()
-      signOut()
+      showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
     }
-    mAuthService = AuthorizationService(
-      requireContext(),
-      AppAuthConfiguration.Builder()
-        .setConnectionBuilder(config.connectionBuilder)
-        .build())
     if (!mStateManager!!.current.isAuthorized) {
-      Log.i(TAG, "No hay autorizacion para el usuario")
-      signOut()
+      showAlert("Error", "Su sesion ha expirado", this::signOut)
     }
     return root
   }
@@ -167,7 +152,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     }
   }
 
-  private fun loadForm(stateFormDefinition: StateFormDefinition?, delivery: PlanificationLine?){
+  private fun loadForm(stateFormDefinition: StateFormDefinition?, delivery: Delivery?){
     Log.i(TAG, "armando formulario...")
     Log.i(TAG, "state form definition a usar para el estado ${delivery?.deliveryState}: ${stateFormDefinition}")
     formContainerLayout.removeAllViews()
@@ -504,26 +489,30 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               data?.data?.also { uri ->
                 if (uri.path != null) {
                   // Perform operations on the document using its URI.
-                  val file: File = File(uri.path!!)
-                  controlContainer.value.fieldValue = file
-                  ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                    3) as ImageButton).setOnClickListener {
-                    // TODO: abrir documento con intent
-                    val intent = Intent()
-                    intent.action = Intent.ACTION_VIEW
-                    intent.setDataAndType(uri,
-                      "image/*")
-                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    startActivity(intent)
+                  val file = File(uri.path!!)
+                  if(file != null) {
+                    Log.i(TAG, "document file exists in: ${file.absolutePath}")
+                    controlContainer.value.fieldValue = file
+                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                      3) as ImageButton).setOnClickListener {
+                      val intent = Intent()
+                      intent.action = Intent.ACTION_VIEW
+                      intent.setDataAndType(uri,
+                        "application/*")
+                      intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      startActivity(intent)
+                    }
+                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                      3) as ImageButton).visibility = View.VISIBLE
+                    Log.i(TAG, "documento seleccionado: ${file.name}")
+                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                      1) as TextView).text = file.name
+                  } else {
+                    Log.e(TAG, "document doesnt exists")
                   }
-                  ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                    3) as ImageButton).visibility = View.VISIBLE
-                  Log.i(TAG, "documento seleccionado: ${file.nameWithoutExtension}")
-                  ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                    1) as TextView).setText(
-                    file.nameWithoutExtension)
                 } else {
-                  Log.e(TAG, "Archivo seleccionado invalido")
+                  Log.e(TAG, "Documento seleccionado invalido")
+                  showAlert(getString(R.string.error), getString(R.string.selected_document_error))
                 }
               }
             }
@@ -535,17 +524,17 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                 /* opcion 1 */
                 if (bmp != null) {
                   // Create the File where the photo should go
-                  val photoFile: File? = try {
+                  val signatureFile: File? = try {
                     createImageFileSignature("png")
                   } catch (ex: IOException) {
                     // Error occurred while creating the File
                     Log.e(TAG, "Error ocurred while creating the image file", ex)
                     null
                   }
-                  photoFile.also {
+                  signatureFile.also {
                     try {
                       FileOutputStream(it).use { out ->
-                        bmp?.compress(Bitmap.CompressFormat.PNG,
+                        bmp.compress(Bitmap.CompressFormat.PNG,
                           100,
                           out)
                       }
@@ -554,16 +543,10 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                       e.printStackTrace()
                     }
                   }
-                  /* opcion 2 */
-                  /*val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
-                  val fileOutputStream: FileOutputStream =
-                    requireContext().openFileOutput(timeStamp, Context.MODE_PRIVATE)
-                  bmp?.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
-                  fileOutputStream.close()*/
                   ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                     4) as ImageView).setImageBitmap(
                     bmp)
-                  controlContainer.value.fieldValue = photoFile
+                  controlContainer.value.fieldValue = signatureFile
                   ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                     4) as ImageView).visibility =
                     View.VISIBLE
@@ -575,35 +558,44 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             FieldSubType.Photo.value -> {
               Log.i(TAG, "obteniendo foto seleccionada")
               try {
-                var bmp: Bitmap? = null
-                if (data?.extras?.containsKey("data") == true) {
-                  bmp = data.extras?.get("data") as Bitmap
-                }
-                Log.i(TAG, "thumb bmp width: ${bmp?.width}, index: ${controlContainer.key}")
                 controlContainer.apply {
-                  if (data?.extras?.containsKey("image") == true) {
-                    this.value.fieldValue = data.extras?.get("image") as File
-                    Log.i(TAG, "usando datos de blank activity con el archivo: ${(this.value.fieldValue as File).absolutePath}")
-                    bmp = BitmapFactory.decodeFile((this.value.fieldValue as File).absolutePath)
-                  } else if(this.value.fieldValue != null) {
+                  if (this.value.fieldValue != null) {
                     Log.i(TAG, "Se usaran los datos de camera activity")
-
                     (this.value.fieldValue as File).also { file ->
-                      Log.i(TAG, "photo file: ${file.absolutePath}")
+                      Log.i(TAG, "photo file: ${file.absolutePath} before compression ${file.length() / 1024}kb")
                       val photoURI: Uri = FileProvider.getUriForFile(
                         requireContext(),
                         "com.tautech.cclapp.fileprovider",
                         file
                       )
-                      /*((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                      4) as ImageView).setImageBitmap(bmp)
-                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                      4) as ImageView).visibility = View.VISIBLE*/
+                      /*val byteArray = file.readBytes()
+                      val bmp = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
+                      if (bmp != null) {
+                        file.also {
+                          try {
+                            FileOutputStream(it).use { out ->
+                              if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                bmp.compress(Bitmap.CompressFormat.WEBP_LOSSLESS,
+                                  100,
+                                  out)
+                              } else {
+                                bmp.compress(Bitmap.CompressFormat.PNG,
+                                  100,
+                                  out)
+                              }
+                            }
+                            Log.i(TAG, "photo file: ${file.absolutePath} after compression ${file.length() / 1024}kb")
+                            this.value.fieldValue = file
+                          } catch (e: IOException) {
+                            Log.e(TAG, "Error ocurred while filling the image file", e)
+                            e.printStackTrace()
+                          }
+                        }
+                      }*/
                       ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                         3) as ImageButton).visibility = View.VISIBLE
                       ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                         3) as ImageButton).setOnClickListener {
-                        // TODO: abrir foto con intent
                         val intent = Intent()
                         intent.action = Intent.ACTION_VIEW
                         intent.setDataAndType(photoURI,
@@ -613,34 +605,8 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                       }
                     }
                   }
-                    /*try {
-                      bmp = BitmapFactory.decodeFile(this.value.fieldValue as String)
-                    } catch (e: FileNotFoundException) {
-                      Log.e(TAG, "El directorio del archivo de la foto, no existe", e)
-                      Toast.makeText(requireContext(),
-                        "Error al crear directorio de la foto",
-                        Toast.LENGTH_SHORT).show()
-                    } catch (e: IOException) {
-                      Log.e(TAG, "El directorio del archivo de la foto, no existe", e)
-                      Toast.makeText(requireContext(),
-                        "Error al crear archivo de la foto",
-                        Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                      Toast.makeText(requireContext(),
-                        "Error desconocido al crear archivo de la foto",
-                        Toast.LENGTH_SHORT).show()
-                    }
-                    if (bmp != null) {
-                      //this.value.fieldValue = bmp
-
-                    } else {
-                      Log.e(TAG, "Error al crear archivo de la foto")
-                      Toast.makeText(requireContext(),
-                        "Error al crear archivo de la foto",
-                        Toast.LENGTH_SHORT).show()
-                    }*/
                 }
-              } catch (e: Exception) {
+                    } catch (e: Exception) {
                 Log.e(TAG, "Excepcion:", e)
               }
             }
@@ -669,7 +635,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           }
         } else {
           Log.e(TAG,
-            "No se encontro acciones a realizar para el control ${controlContainer.value.field.label}")
+            "No se encontro acciones a realizar para el control ${controlContainer.value.field.label} con result code: $resultCode")
         }
       } else {
         Log.e(TAG, "No se encontro control en el indice $requestCode")
@@ -890,9 +856,8 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     return stateForm
   }
 
-  fun generateFormDataWithFiles(): StateForm {
-    val formData = StateForm(null, viewModel.state.value ?: "")
-    formData.data = arrayListOf()
+  fun generateFormDataWithFiles(): ArrayList<Item> {
+    val items: ArrayList<Item> = arrayListOf()
     createdControls.forEach { (key, valueContainer) ->
       if (formContainerLayout.getChildAt(key) != null) {
         if (valueContainer.field.controlType == ControlType.File.value) {
@@ -900,20 +865,30 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           val value = valueContainer.fieldValue
           if (value != null && value is File) {
             Log.i(TAG, "valor de ${valueContainer.field.label} es tipo archivo")
-            val fileUri: Uri = FileProvider.getUriForFile(
-              requireContext(),
-              "com.tautech.cclapp.fileprovider",
-              value
-            )
-            val mediaTypeStr = activity?.contentResolver?.getType(fileUri)
+            val mediaTypeStr = when(valueContainer.field.subtype) {
+              FieldSubType.Photo.value -> {
+                val fileUri: Uri = FileProvider.getUriForFile(
+                  requireContext(),
+                  "com.tautech.cclapp.fileprovider",
+                  value
+                )
+                activity?.contentResolver?.getType(fileUri)
+              }
+              FieldSubType.Signature.value -> {
+                val fileUri: Uri = FileProvider.getUriForFile(
+                  requireContext(),
+                  "com.tautech.cclapp.fileprovider",
+                  value
+                )
+                activity?.contentResolver?.getType(fileUri)
+              }
+              FieldSubType.Document.value -> {
+                "application/pdf"
+              }
+              else -> null
+            }
             if (mediaTypeStr != null) {
-              val mimeType = MediaType.parse(mediaTypeStr)
-              Log.i(TAG,
-                "media type de ${valueContainer.field.label}:, mediaTypeStr: $mediaTypeStr, mimeType: $mimeType")
-              //val requestFile = RequestBody.create(mimeType, value)
-              val requestFile = RequestBody.create(MediaType.parse("multipart/form-data"), value)
-              val body = MultipartBody.Part.createFormData("file", value.name, requestFile)
-              formData.data?.add(Item(valueContainer.field.name ?: "unknown", body))
+                items.add(Item(valueContainer.field.name ?: "unknown", value))
             } else {
               Log.e(TAG, "mimetype de ${valueContainer.field.label} es invalido")
             }
@@ -923,12 +898,12 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
         }
       }
     }
-    return formData
+    return items
   }
 
   @kotlin.jvm.Throws(IOException::class)
   fun getFinalFutureState(): String{
-    val totalDeliveredItems = viewModel.delivery.value?.detail?.fold(0, { totalDelivered, deliveryLine ->
+    val totalDeliveredItems = viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
       totalDelivered + deliveryLine.deliveredQuantity
     })
     if (totalDeliveredItems != null) {
@@ -942,7 +917,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
         return "Partial"
       }
     }
-    throw (IOException("Error: Unknown final state for delivery ${viewModel.delivery.value?.id}"))
+    throw (IOException("Error: Unknown final state for delivery ${viewModel.delivery.value?.deliveryId}"))
   }
 
   override fun onRefresh() {
@@ -956,10 +931,9 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
 
   private fun loadStateFormDefinitions(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
     if (ex != null) {
-      Log.e(TAG, "Token refresh failed when finalizing planification load", ex)
-      AuthStateManager.driverInfo = null
+      Log.e(TAG, "ocurrio una excepcion mientras se recuperaban lineas de planificacion", ex)
       if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-        showAlert("Error", "Sesion Expirada", this::signOut)
+        showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
       }
       return
     }
@@ -982,16 +956,16 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           Log.i(TAG, "respuesta al cargar form definitions: ${response}")
           if (response != null && response.size > 0) {
             try {
-              for (def in response) {
-                Log.i(TAG, "guardando en DB local definicion de ${def.deliveryState}")
-                db?.stateFormDefinitionDao()?.insert(def)
-                Log.i(TAG, "definicion de ${def.deliveryState} tiene ${def.formFieldList?.size ?: 0} fields")
-                if (!def.formFieldList.isNullOrEmpty()) {
-                  for (field in def.formFieldList!!) {
-                    Log.i(TAG, "guardando field: $field")
-                    field.formDefinitionId = def.id?.toInt()
-                    db?.stateFormFieldDao()?.insert(field)
-                  }
+              Log.i(TAG, "guardando en DB local definiciones en la BD local")
+              db?.stateFormDefinitionDao()?.insertAll(response)
+              response.flatMap { def ->
+                def.formFieldList?.forEach {field ->
+                  field.formDefinitionId = def.id?.toInt()
+                }
+                def.formFieldList ?: listOf()
+              }.also {allFields ->
+                if(allFields.isNotEmpty()) {
+                  db?.stateFormFieldDao()?.insertAll(allFields)
                 }
               }
               if (viewModel.state.value != null) {
@@ -1051,7 +1025,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
   private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
     Log.i(TAG, "Fetching data...$callback")
     try {
-      mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
+      mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
         callback)
     }catch (ex: AuthorizationException) {
       Log.e(TAG, "error fetching data", ex)
@@ -1060,10 +1034,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
 
   private fun signOut() {
     mStateManager?.signOut(requireContext())
-    val mainIntent = Intent(requireContext(), LoginActivity::class.java)
-    mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP
-    startActivity(mainIntent)
-    activity?.finish()
+    //activity?.finish()
   }
 
   fun showAlert(title: String, message: String) {
@@ -1073,7 +1044,9 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
       builder.setMessage(message)
       builder.setPositiveButton("Aceptar", null)
       val dialog: AlertDialog = builder.create();
-      dialog.show();
+      if(activity?.isDestroyed == false && activity?.isFinishing == false) {
+        dialog.show()
+      }
     }
   }
 
@@ -1093,7 +1066,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
       }
       dialog.dismiss()
     })
-    if(this.activity?.isDestroyed == false && this.activity?.isFinishing == false) {
+    if(activity?.isDestroyed == false && activity?.isFinishing == false) {
       val dialog: AlertDialog = builder.create()
       dialog.show()
     }

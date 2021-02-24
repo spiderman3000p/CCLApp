@@ -9,28 +9,27 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
-import com.google.android.material.bottomnavigation.BottomNavigationView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.isVisible
 import androidx.lifecycle.Observer
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.snackbar.Snackbar
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.Delivery
+import com.tautech.cclapp.models.DeliveryLine
+import com.tautech.cclapp.models.Planification
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.activity_delivery_detail.*
 import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
 import org.jetbrains.anko.contentView
@@ -43,11 +42,9 @@ class DeliveryDetailActivity : AppCompatActivity() {
     private var newState: String = ""
     val TAG = "DELIVERY_DETAIL_ACTIVITY"
     var planification: Planification? = null
-    var delivery: PlanificationLine? = null
+    var delivery: Delivery? = null
     private var retrofitClient: Retrofit? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
     var db: AppDatabase? = null
     private val viewModel: DeliveryDetailActivityViewModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,7 +66,6 @@ class DeliveryDetailActivity : AppCompatActivity() {
         supportActionBar?.setDisplayShowHomeEnabled(true)
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(this)
-        mConfiguration = Configuration.getInstance(this)
         val config = Configuration.getInstance(this)
         try {
             db = AppDatabase.getDatabase(this)
@@ -81,22 +77,11 @@ class DeliveryDetailActivity : AppCompatActivity() {
             Log.e(TAG, "Database error found", ex)
         }
         if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                this,
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            signOut()
+            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
             return
         }
-        mAuthService = AuthorizationService(
-            this,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         if (!mStateManager!!.current.isAuthorized) {
-            Log.i(TAG, "No hay autorizacion para el usuario")
-            signOut()
+            showAlert("Error", "Sesion Expirada", this::signOut)
             return
         }
         viewModel.planification.observe(this, Observer{_planification ->
@@ -107,62 +92,67 @@ class DeliveryDetailActivity : AppCompatActivity() {
             }
         })
         viewModel.delivery.observe(this, Observer{_del ->
-            Log.i(TAG, "Delivery observada: ${_del.id}")
+            Log.i(TAG, "Delivery observada: ${_del.deliveryId}")
             if (_del != null) {
                 delivery = _del
+                getDeliveryLines()
                 invalidateOptionsMenu()
                 checkManageBtnStatus()
             }
+        })
+        viewModel.deliveryLines.observe(this, Observer{lines ->
+            Log.i(TAG, "Delivery lines observadas(${lines.size}): ${lines}")
         })
         val extras = intent.extras
         if (extras != null) {
             // TODO obtener planificacion id de shared preferences y luego la planificacion de la BD
             if (extras.containsKey("planification")) {
                 planification = extras.getSerializable("planification") as Planification
+                Log.i(TAG, "planificacion recibida en intent: $planification")
             } else {
-                Log.i(TAG, "no se recibio ninguna planificacion")
+                Log.i(TAG, "no se recibio ninguna planificacion en el intent")
                 finish()
             }
             if (extras.containsKey("delivery")) {
-                delivery = extras.getSerializable("delivery") as PlanificationLine
+                delivery = extras.getSerializable("delivery") as Delivery
+                Log.i(TAG, "delivery recibida en intent: $delivery")
             } else {
-                Log.i(TAG, "no se recibio ninguna delivery")
+                Log.i(TAG, "no se recibio ninguna delivery en el intent")
                 finish()
             }
         } else {
             Log.i(TAG, "no se recibieron datos")
             finish()
         }
-        /*if (savedInstanceState != null) {
-            if (savedInstanceState.containsKey("delivery")) {
-                delivery = savedInstanceState.getSerializable("delivery") as PlanificationLine
-                viewModel.delivery.postValue(delivery)
+    }
+
+    private fun getDeliveryLines() {
+        doAsync {
+            val localDeliveryLines = db?.deliveryDao()?.getLines(delivery?.deliveryId!!)
+            if(localDeliveryLines.isNullOrEmpty()){
+                fetchData(this@DeliveryDetailActivity::fetchDeliveryLines)
+            } else {
+                viewModel.deliveryLines.postValue(localDeliveryLines.toMutableList())
             }
-            if (savedInstanceState.containsKey("planification")) {
-                planification = savedInstanceState.getSerializable("planification") as Planification
-                viewModel.planification.postValue(planification)
-            }
-            if (savedInstanceState.containsKey("stateFormDefinitions")) {
-                val stateFormDefinitions = savedInstanceState.getSerializable("stateFormDefinitions") as MutableList<StateFormDefinition>
-                viewModel.stateFormDefinitions.postValue(stateFormDefinitions)
-            }
-        }*/
+        }
     }
 
     override fun onResume() {
         super.onResume()
         Log.i(TAG, "onResume()...")
         showLoader()
+        mStateManager?.revalidateSessionData(this)
         doAsync {
-            val planification = db?.planificationDao()?.getById(planification?.id?.toInt()!!)
-            viewModel.planification.postValue(planification)
+            Log.i(TAG, "buscando planificacion ${planification?.id} en BD local...")
+            val planification = db?.planificationDao()?.getById(planification?.id!!)
             Log.i(TAG, "planification loaded from local DB: $planification")
-            val delivery = db?.deliveryDao()?.getById(delivery?.id)
+            Log.i(TAG, "buscando delivery ${delivery?.deliveryId} en BD local...")
+            val delivery = db?.deliveryDao()?.getById(delivery?.deliveryId)
+            Log.i(TAG, "delivery loaded from local DB: $delivery")
             if (delivery != null) {
-                delivery.detail.addAll(db?.deliveryDao()?.getGroupedLines(delivery.id) ?: listOf())
+                //delivery.detail.addAll(db?.deliveryDao()?.getGroupedLines(delivery.id) ?: listOf())
                 viewModel.delivery.postValue(delivery)
             }
-            Log.i(TAG, "delivery loaded from local DB: $delivery")
             hideLoader()
         }
     }
@@ -193,18 +183,8 @@ class DeliveryDetailActivity : AppCompatActivity() {
     }
 
     private fun signOut() {
-        // discard the authorization and token state, but retain the configuration and
-        // dynamic client registration (if applicable), to save from retrieving them again.
-        val currentState = mStateManager!!.current
-        val clearedState = AuthState(currentState.authorizationServiceConfiguration!!)
-        if (currentState.lastRegistrationResponse != null) {
-            clearedState.update(currentState.lastRegistrationResponse)
-        }
-        mStateManager!!.replace(clearedState)
-        val mainIntent = Intent(this, LoginActivity::class.java)
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        finish()
+        mStateManager?.signOut(this)
+        //finish()
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -212,7 +192,7 @@ class DeliveryDetailActivity : AppCompatActivity() {
         return true
     }
 
-    /*override fun onCreateOptionsMenu(menu: Menu): Boolean {
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
         val inflater: MenuInflater = menuInflater
         inflater.inflate(R.menu.menu_delivery, menu)
         menu.findItem(R.id.setAsCancelled).isVisible = false
@@ -299,7 +279,7 @@ class DeliveryDetailActivity : AppCompatActivity() {
             }
             else -> super.onOptionsItemSelected(item)
         }
-    }*/
+    }
 
     fun askForChangeState(state: String) {
         newState = state
@@ -322,31 +302,24 @@ class DeliveryDetailActivity : AppCompatActivity() {
 
     private fun changeDeliveryState(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when finalizing planification load", ex)
-            AuthStateManager.driverInfo = null
-            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-
-            }
+            Log.e(TAG, "ocurrio una excepcion al intentar cambiar estado", ex)
             showAlert("Error", "Sesion Expirada", this::signOut)
             return
         }
         showLoader()
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            val urlChangeState = "delivery/${delivery?.id}/changeState?newState=$newState"
+        if (dataService != null && accessToken != null && delivery != null) {
+            val urlChangeState = "delivery/${delivery?.deliveryId}/changeState?newState=$newState"
             doAsync {
                 showSnackbar("Solicitando cambio de estado del delivery...")
                 try {
-                    val callChangeState = dataService.changePlanificationState(urlChangeState,
+                    val callChangeState = dataService.changeDeliveryState(urlChangeState,
                         "Bearer $accessToken")
                         .execute()
                     hideLoader()
-                    val responseChangeState = callChangeState.body()
-                    Log.i(TAG, "finalize planification load response $responseChangeState")
-                    if (callChangeState.code() == 201) {
-                        Log.i(TAG,
-                            "respuesta al cambiar estado del delivery ${delivery?.id}: ${responseChangeState}")
+                    Log.i(TAG, "finalize planification load response ${callChangeState.code()}")
+                    if (callChangeState.code() == 200) {
                         delivery?.deliveryState = newState
                         viewModel.delivery.postValue(delivery)
                         try {
@@ -381,10 +354,70 @@ class DeliveryDetailActivity : AppCompatActivity() {
         }
     }
 
+    private fun fetchDeliveryLines(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
+        if (ex != null) {
+            Log.e(TAG, "ocurrio una excepcion al intentar obtener delivery lines", ex)
+            showAlert("Error", "Sesion Expirada", this::signOut)
+            return
+        }
+        showLoader()
+        val dataService: CclDataService? = CclClient.getInstance()?.create(
+            CclDataService::class.java)
+        if (dataService != null && accessToken != null && delivery != null) {
+            val url = "planificationDeliveryDetailVO1s/search/findByDeliveryId?deliveryId=${delivery?.deliveryId}"
+            doAsync {
+                try {
+                    val call = dataService.getDeliveryDeliveryLines(url,
+                        "Bearer $accessToken")
+                        .execute()
+                    hideLoader()
+                    val response = call.body()
+                    Log.i(TAG, "fetching delivery lines response $response")
+                    if (response != null && response._embedded.planificationDeliveryDetailVO1s.isNotEmpty()) {
+                        val deliveryLines = mutableListOf<DeliveryLine>()
+                        for (deliveryLine in response._embedded.planificationDeliveryDetailVO1s) {
+                            for (i in 0 until deliveryLine.quantity) {
+                                deliveryLines.add(deliveryLine.copy(index = i,
+                                    planificationId = planification?.id!!))
+                            }
+                        }
+                        viewModel.deliveryLines.postValue(deliveryLines)
+                        try {
+                            db?.deliveryLineDao()?.insertAll(deliveryLines)
+                        } catch (ex: SQLiteException) {
+                            Log.e(TAG,
+                                "Error actualizando delivery lines en la BD local",
+                                ex)
+                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
+                        } catch (ex: SQLiteConstraintException) {
+                            Log.e(TAG,
+                                "Error actualizando delivery lines en la BD local",
+                                ex)
+                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
+                        } catch (ex: Exception) {
+                            Log.e(TAG,
+                                "Error actualizando delivery lines en la BD local",
+                                ex)
+                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
+                        }
+                    }
+                } catch(toe: SocketTimeoutException) {
+                    Log.e(TAG, "Network error when fetching delivery lines", toe)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                } catch (ioEx: IOException) {
+                    Log.e(TAG,
+                        "Network error when fetching delivery lines",
+                        ioEx)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                }
+            }
+        }
+    }
+
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching user planifications...")
         try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
+            mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
                 callback)
         }catch (ex: AuthorizationException) {
             Log.e(TAG, "error fetching data", ex)

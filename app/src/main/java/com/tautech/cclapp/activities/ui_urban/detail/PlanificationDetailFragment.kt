@@ -1,31 +1,27 @@
 package com.tautech.cclapp.activities.ui_urban.detail
 
 import android.content.DialogInterface
-import android.content.Intent
 import android.database.sqlite.*
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.content.ContextCompat.getColor
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import com.tautech.cclapp.*
-import com.tautech.cclapp.activities.LoginActivity
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
+import com.tautech.cclapp.models.Delivery
 import com.tautech.cclapp.models.PlanificationLine
-import com.tautech.cclapp.models.StateFormDefinition
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.fragment_planification_detail.*
 import kotlinx.android.synthetic.main.fragment_planification_detail.view.*
@@ -41,9 +37,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
     val TAG = "PLANIFICATION_DETAIL_FRAGMENT"
     private val viewModel: PlanificationDetailActivityViewModel by activityViewModels()
     private var retrofitClient: Retrofit? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
     var db: AppDatabase? = null
     var totalDeliveriesDelivered = 0
     var totalDeliveryLinesDelivered = 0
@@ -53,10 +47,9 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
             savedInstanceState: Bundle?
     ): View? {
         val root = inflater.inflate(R.layout.fragment_planification_detail, container, false)
-        var deliveredDeliveries: List<PlanificationLine> = listOf()
+        var deliveredDeliveries: List<Delivery> = listOf()
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(requireContext())
-        mConfiguration = Configuration.getInstance(requireContext())
         val config = Configuration.getInstance(requireContext())
         try {
             db = AppDatabase.getDatabase(requireContext())
@@ -68,21 +61,10 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
             Log.e(TAG, "Database error found", ex)
         }
         if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                requireContext(),
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            signOut()
+            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
         }
-        mAuthService = AuthorizationService(
-            requireContext(),
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         if (!mStateManager!!.current.isAuthorized) {
-            Log.i(TAG, "No hay autorizacion para el usuario")
-            signOut()
+            showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
         }
         viewModel.deliveries.observe(viewLifecycleOwner, Observer{ deliveries ->
             deliveredDeliveries = deliveries.filter {
@@ -100,6 +82,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
                 "OnGoing" -> ContextCompat.getColorStateList(requireContext(), R.color.ongoing_bg)
                 else -> ContextCompat.getColorStateList(requireContext(), R.color.created_bg)
             }
+            root.dateTv.text = planification.dispatchDate
             root.planificationTypeTv.text = planification.planificationType
             root.planificationLabelTv.text = planification.label.let {
                 if (it.isNullOrEmpty()) {
@@ -108,9 +91,11 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
                     it
                 }
             }
-            root.planificationCustomerTv.text = planification.customerName
-            root.planificationDriverTv.text = planification.driverName
-            root.planificationVehicleTv.text = planification.vehicleLicensePlate
+            /*root.planificationCustomerTv.text = planification.customerName
+            root.planificationDriverTv.text = planification.driverName*/
+            root.planificationDriverTv.visibility = View.GONE
+            root.planificationCustomerTv.visibility = View.GONE
+            root.planificationVehicleTv.text = planification.licensePlate
             root.totalWeightChip.text = "%.2f".format(planification.totalWeight ?: 0) + " kg"
             root.totalValueChip.text = "%.2f".format(planification.totalValue ?: 0) + " $"
             refreshTotals()
@@ -132,7 +117,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
         return (totalDeliveriesDelivered * 100) / (viewModel.planification.value?.totalDeliveries ?: 1)
     }
 
-    fun calculateTotals(deliveredDeliveries: List<PlanificationLine> ){
+    fun calculateTotals(deliveredDeliveries: List<Delivery> ){
         totalDeliveriesDelivered = deliveredDeliveries.size
         totalDeliveryLinesDelivered = 0
         deliveredDeliveries.forEach {
@@ -146,10 +131,10 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
     fun refreshTotals(){
         planificationCompletedProgressTv.text = "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
         planificationCompletedProgressBar.progress = getCompletedDeliveryLinesProgress()
-        totalItemsChip.text = "${totalDeliveriesDelivered ?: 0}/${viewModel.planification.value?.totalDeliveries ?: 0}"
+        totalItemsChip.text = "${totalDeliveriesDelivered}/${viewModel.planification.value?.totalDeliveries ?: 0}"
         deliveriesCompletedProgressTv.text = "${getCompletedDeliveriesProgress()}% ${getString(R.string.completed)}"
         deliveriesCompletedProgressBar.progress = getCompletedDeliveriesProgress()
-        deliveryLinesCountChip.text = "${totalDeliveryLinesDelivered ?: 0}/${viewModel.planification.value?.totalUnits ?: 0}"
+        deliveryLinesCountChip.text = "${totalDeliveryLinesDelivered}/${viewModel.planification.value?.totalUnits ?: 0}"
         deliveryLinesCompletedProgressTv.text = "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
         deliveryLinesCompletedProgressBar.progress = getCompletedDeliveryLinesProgress()
     }
@@ -164,10 +149,9 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
 
     private fun loadStateFormDefinitions(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when finalizing planification load", ex)
-            AuthStateManager.driverInfo = null
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban las definicones de formularios", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Error", "Sesion Expirada", this::signOut)
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -185,18 +169,18 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
                         .execute()
                     val response = call.body()
                     Log.i(TAG, "respuesta al cargar form definitions: ${response}")
-                    if (response != null && response.size > 0) {
+                    if (!response.isNullOrEmpty()) {
                         try {
-                            for (def in response) {
-                                Log.i(TAG, "guardando en DB local definicion de ${def.deliveryState}")
-                                db?.stateFormDefinitionDao()?.insert(def)
-                                Log.i(TAG, "definicion de ${def.deliveryState} tiene ${def.formFieldList?.size ?: 0} fields")
-                                if (!def.formFieldList.isNullOrEmpty()) {
-                                    for (field in def.formFieldList!!) {
-                                        Log.i(TAG, "guardando field: $field")
-                                        field.formDefinitionId = def.id?.toInt()
-                                        db?.stateFormFieldDao()?.insert(field)
-                                    }
+                            Log.i(TAG, "guardando en DB local definiciones")
+                            db?.stateFormDefinitionDao()?.insertAll(response)
+                            response.flatMap{def ->
+                                def.formFieldList?.forEach {field ->
+                                    field.formDefinitionId = def.id?.toInt()
+                                }
+                                def.formFieldList ?: listOf()
+                            }.also{fields ->
+                                if (fields.isNotEmpty()) {
+                                    db?.stateFormFieldDao()?.insertAll(fields)
                                 }
                             }
                         } catch (ex: SQLiteException) {
@@ -235,7 +219,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching data...$callback")
         try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
+            mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
                 callback)
         }catch (ex: AuthorizationException) {
             Log.e(TAG, "error fetching data", ex)
@@ -244,10 +228,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
 
     private fun signOut() {
         mStateManager?.signOut(requireContext())
-        val mainIntent = Intent(requireContext(), LoginActivity::class.java)
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        activity?.finish()
+        //activity?.finish()
     }
 
     fun showAlert(title: String, message: String) {

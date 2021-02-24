@@ -1,7 +1,9 @@
 package com.tautech.cclapp.daos
 
 import androidx.room.*
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.StateFormDefinition
+import com.tautech.cclapp.models.StateFormField
+import java.util.*
 
 @Dao
 interface StateFormDefinitionDao {
@@ -34,4 +36,7 @@ interface StateFormDefinitionDao {
 
     @Query("SELECT * FROM stateformdefinition WHERE customerId = CAST(:customerId AS NUMERIC)")
     fun getAllByCustomer(customerId: Long?): List<StateFormField>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertAll(definitions: ArrayList<StateFormDefinition>)
 }

@@ -11,10 +11,10 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.getColor
 import androidx.recyclerview.widget.RecyclerView
-import com.tautech.cclapp.activities.CertificateActivity
 import com.tautech.cclapp.R
-import com.tautech.cclapp.models.Planification
+import com.tautech.cclapp.activities.CertificateActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivity
+import com.tautech.cclapp.models.Planification
 import kotlinx.android.synthetic.main.planification_card_item.view.*
 
 class PlanificationAdapter(private val dataList: List<Planification>, val context: Context):
@@ -51,19 +51,19 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
             }
             itemView.cardView.setCardBackgroundColor(backgroundColor)
             itemView.stateTv.backgroundTintList = colorStateList
-            itemView.stateTv.text = planification?.state
-            itemView.titleTv.text = "${planification.vehicleLicensePlate}-${planification.label ?: ""}"
+            itemView.stateTv.text = planification.state
+            itemView.titleTv.text = "${planification.licensePlate}-${planification.label ?: ""}"
             var percent: Double = 0.0
             var percentStr = ""
             if (planification.planificationType == "National") {
                 if ((planification.totalUnits?.compareTo(0)
-                        ?: 0) > 0 && planification.totalCertificate ?: 0 > 0
+                        ?: 0) > 0 && planification.totalCertified ?: 0 > 0
                 ) {
                     percent =
-                        (100 * (planification.totalCertificate ?: 0) / (planification.totalUnits
+                        (100 * (planification.totalCertified ?: 0) / (planification.totalUnits
                             ?: 1)).toDouble()
                 }
-                percentStr = String.format("%.2f", percent) + "% (${planification.totalCertificate})"
+                percentStr = String.format("%.2f", percent) + "% (${planification.totalCertified})"
             } else if(planification.planificationType == "Urban") {
                 if ((planification.totalUnits?.compareTo(0)
                         ?: 0) > 0 && planification.totalDeliveries ?: 0 > 0
@@ -76,11 +76,11 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
             }
             itemView.percentCertifiedTv.text = percentStr
             //itemView.progressBar.setProgress(percent.toInt(), true)
-            itemView.customerTv.text = planification.customerName
+            //itemView.customerTv.text = planification.customerName
             itemView.addressTv.text = planification.address
-            itemView.dateTv.text = planification.date
+            itemView.dateTv.text = planification.dispatchDate
             itemView.qtyTv.text = planification.totalDeliveries.toString()
-            itemView.deliveryLinesTv.text = planification.totalLines.toString()
+            //itemView.deliveryLinesTv.text = planification.totalLines.toString()
             itemView.unitsTv.text = planification.totalUnits.toString()
         }
     }

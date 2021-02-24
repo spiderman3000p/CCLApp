@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
 xmlns:android="http://schemas.android.com/apk/res/android"
-android:id="@+id/selectControl"
-android:layout_width="match_parent"
+    android:layout_width="match_parent"
 android:layout_height="wrap_content"
 android:orientation="vertical">
 
 <TextView
-    android:id="@+id/textView15"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:text="TextView"
@@ -15,7 +13,6 @@ android:orientation="vertical">
     android:textStyle="bold" />
 
 <Spinner
-    android:id="@+id/spinner2"
     android:layout_width="match_parent"
     android:layout_height="50dp" />
 </LinearLayout>

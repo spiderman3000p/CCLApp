@@ -27,7 +27,6 @@
         app:layout_constraintStart_toStartOf="parent" />
 
     <ImageView
-        android:id="@+id/imageView8"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:adjustViewBounds="false"
@@ -44,7 +43,6 @@
         app:srcCompat="@drawable/truck_services__2_" />
 
     <ImageView
-        android:id="@+id/imageView2"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="80dp"

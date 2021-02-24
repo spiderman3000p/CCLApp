@@ -2,12 +2,15 @@ package com.tautech.cclapp.activities.ui_national.scan
 
 import android.content.Context
 import android.content.DialogInterface
-import android.content.Intent
 import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteException
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.util.Log
-import android.view.*
+import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -22,40 +25,44 @@ import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKManager.FEATURE_TYPE
 import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
-import com.symbol.emdk.barcode.Scanner
 import com.tautech.cclapp.R
-import com.tautech.cclapp.activities.*
+import com.tautech.cclapp.activities.CertificateActivity
+import com.tautech.cclapp.activities.CertificateActivityViewModel
+import com.tautech.cclapp.activities.KEY_DRIVER_INFO
+import com.tautech.cclapp.activities.KEY_PROFILE_INFO
 import com.tautech.cclapp.adapters.DeliveryLineAdapter
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.DeliveryLine
+import com.tautech.cclapp.models.Driver
+import com.tautech.cclapp.models.KeycloakUser
+import com.tautech.cclapp.models.PendingToUploadCertification
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.MyWorkerManagerService
 import kotlinx.android.synthetic.main.fragment_scan.*
-import net.openid.appauth.*
+import net.openid.appauth.AppAuthConfiguration
+import net.openid.appauth.AuthorizationService
 import org.jetbrains.anko.doAsync
 import org.json.JSONException
-import retrofit2.Response
-import java.io.EOFException
-import java.io.IOException
-import kotlin.collections.ArrayList
 
 class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     val TAG = "SCAN_FRAGMENT"
     // Variables to hold EMDK related objects
-    private var emdkManager: EMDKManager? = null;
-
-    private var barcodeManager: BarcodeManager? = null;
-    private var scanner: Scanner? = null;
+    private var emdkManager: EMDKManager? = null
+    private var scanSuccessBeep: MediaPlayer? = null
+    private var scanFailBeep: MediaPlayer? = null
+    private var scanErrorBeep: MediaPlayer? = null
+    private var scanExistsBeep: MediaPlayer? = null
+    private var scanTriggerBeep: MediaPlayer? = null
+    private var barcodeManager: BarcodeManager? = null
+    private var scanner: Scanner? = null
     // Variables to hold handlers of UI controls
     private val viewModel: CertificateActivityViewModel by activityViewModels()
     private var certificatedLinesShort: MutableList<DeliveryLine> = mutableListOf()
     private var mAdapter: DeliveryLineAdapter? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
     private var db: AppDatabase? = null
     var dataService: CclDataService? = null
     //var scannedCounter: Int = 0
@@ -71,50 +78,13 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
         dataService = CclClient.getInstance()?.create(
             CclDataService::class.java)
         mStateManager = AuthStateManager.getInstance(requireContext())
-        mConfiguration = Configuration.getInstance(requireContext())
-        val config = Configuration.getInstance(requireContext())
-        if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                requireContext(),
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-        }
-        mAuthService = AuthorizationService(
-            requireContext(),
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         Log.i(TAG, "Restoring state...")
         val sharedPref = activity?.getSharedPreferences(activity?.packageName, Context.MODE_PRIVATE)
-        if (savedInstanceState != null) {
-            try {
-                /*val jsonString: String? = savedInstanceState.getString(KEY_USER_INFO)
-                if (jsonString != null) {
-                    mStateManager?.userInfo = JSONObject(jsonString)
-                }*/
-                if (savedInstanceState.containsKey(KEY_PROFILE_INFO)) {
-                    mStateManager?.keycloakUser = savedInstanceState.getSerializable(
-                        KEY_PROFILE_INFO) as KeycloakUser
-                }
-                if (savedInstanceState.containsKey(KEY_DRIVER_INFO)) {
-                    mStateManager?.driverInfo = savedInstanceState.getSerializable(KEY_DRIVER_INFO) as Driver
-                }
-            } catch (ex: JSONException) {
-                Log.e(TAG, "Failed to parse saved user info JSON, discarding", ex)
-            }
-        } else {
-            val gson = Gson()
-            /*if (sharedPref?.contains("userInfo") == true) {
-                mStateManager?.userInfo = JSONObject(sharedPref.getString("userInfo", "")!!)
-            }*/
-            if (sharedPref?.contains("keycloakUserJSON") == true) {
-                mStateManager?.keycloakUser = gson.fromJson(sharedPref.getString("keycloakUserJSON", ""), KeycloakUser::class.java)
-            }
-            if (sharedPref?.contains("driverInfoJSON") == true) {
-                mStateManager?.driverInfo = gson.fromJson(sharedPref.getString("driverInfoJSON", ""), Driver::class.java)
-            }
-        }
+        scanSuccessBeep = MediaPlayer.create(context, R.raw.success)
+        scanFailBeep = MediaPlayer.create(context, R.raw.fail)
+        scanTriggerBeep = MediaPlayer.create(context, R.raw.trigger)
+        scanExistsBeep = MediaPlayer.create(context, R.raw.exists)
+        scanErrorBeep = MediaPlayer.create(context, R.raw.error)
         //Log.i(TAG, "loaded user info: ${mStateManager?.userInfo}")
         Log.i(TAG, "loaded user profile: ${mStateManager?.keycloakUser}")
         Log.i(TAG, "loaded driver info: ${mStateManager?.driverInfo}")
@@ -173,21 +143,6 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
             }
         }
         initEMDK()
-    }
-
-    private fun signOut() {
-        // discard the authorization and token state, but retain the configuration and
-        // dynamic client registration (if applicable), to save from retrieving them again.
-        val currentState = mStateManager!!.current
-        val clearedState = AuthState(currentState.authorizationServiceConfiguration!!)
-        if (currentState.lastRegistrationResponse != null) {
-            clearedState.update(currentState.lastRegistrationResponse)
-        }
-        mStateManager!!.replace(clearedState)
-        val mainIntent = Intent(context, LoginActivity::class.java)
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        activity?.finish()
     }
 
     fun initEMDK() {
@@ -373,6 +328,8 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                 // Concatenate barcode data and label type
                 dataStr = "$barcodeData  $labelType";
             }
+            // limpiamos input
+            barcodeEt.text.clear()
             // Updates EditText with scanned data and type of label on UI thread.
             doAsync {
                 searchData(dataStr)
@@ -381,6 +338,10 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
     }
 
     fun searchData(barcode: String) {
+        // play trigger sound
+        /*doAsync {
+            scanTriggerBeep?.start()
+        }*/
         Log.i(TAG, "barcode readed: $barcode")
         val readedParts: List<String> = barcode.split("-")
         Log.i(TAG, "barcode parts: $readedParts")
@@ -403,7 +364,10 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                 index = 0
             }
             else -> {
-                showAlert("Error","No ID readed")
+                doAsync {
+                    scanErrorBeep?.start()
+                }
+                showSnackbar("Error de lectura")
                 return
             }
         }
@@ -413,8 +377,11 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
         // primero buscamos si ya fue escaneado
         val exists = db?.deliveryLineDao()?.hasBeenCertified(deliveryLineId.toInt(), index)
         if (exists != null) {
+            doAsync {
+                scanExistsBeep?.start()
+            }
             Log.i(TAG, "delivery line ya se encuentra certificado en la BD local: $exists")
-            showAlert("ITEM EXISTENTE", "Este item ya fue escaneado")
+            showSnackbar("Este item ya fue escaneado")
             return
         } else {
             Log.i(TAG, "delivery line no se encuentra certificado en la BD local")
@@ -431,7 +398,10 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
             if (foundDeliveryLine == null) {
                 hasBeenCertified = (howManyCertified ?: 0) > 0
                 if (hasBeenCertified) {
-                    showAlert("ITEM EXISTENTE", "Este item ya fue escaneado")
+                    doAsync {
+                        scanExistsBeep?.start()
+                    }
+                    showSnackbar("Este item ya fue escaneado")
                 }
             }
         } else if (deliveryLineId > 0) {
@@ -443,30 +413,35 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                     d.id == deliveryLineId
                 }!! > 0
                 if (hasBeenCertified) {
-                    activity?.runOnUiThread {
-                        showSnackbar("Este item ya fue escaneado")
+                    doAsync {
+                        scanExistsBeep?.start()
                     }
+                    showSnackbar("Este item ya fue escaneado")
                 }
             }
         } else {
-            Log.e(TAG, "Error con datos de entrada")
-            activity?.runOnUiThread {
-                showSnackbar("Error con datos de entrada")
+            doAsync {
+                scanErrorBeep?.start()
             }
+            Log.e(TAG, "Error con datos de entrada")
+            showSnackbar("Error con datos de entrada")
             return
         }
         if (foundDeliveryLine != null) {
+            doAsync {
+                scanSuccessBeep?.start()
+            }
             foundDeliveryLine.scannedOrder = (howManyCertified ?: 0) + 1
             updateStatus("Codigo Encontrado")
             Log.i(TAG, "$foundDeliveryLine")
-            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertificate}")
+            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertified}")
             viewModel.pendingDeliveryLines.value?.remove(foundDeliveryLine)
             viewModel.certifiedDeliveryLines.value?.add(0, foundDeliveryLine)
             viewModel.certifiedDeliveryLines.postValue(viewModel.certifiedDeliveryLines.value)
             //saveOnLocalDatabase(foundDeliveryLine)
-            viewModel.planification.value?.totalCertificate = (viewModel.planification.value?.totalCertificate ?: 0) + 1
+            viewModel.planification.value?.totalCertified = (viewModel.planification.value?.totalCertified ?: 0) + 1
             doAsync {
-                db?.planificationDao()?.update(viewModel.planification.value)
+                db?.planificationDao()?.update(viewModel.planification.value!!)
                 db?.deliveryLineDao()?.update(foundDeliveryLine)
                 val certification = PendingToUploadCertification()
                 certification.deliveryId = foundDeliveryLine.deliveryId
@@ -477,65 +452,10 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                 MyWorkerManagerService.enqueUploadSingleCertificationWork(requireContext(), certification)
             }
         } else if (!hasBeenCertified) {
-            updateStatus("Codigo No Encontrado")
-        }
-    }
-
-    private fun saveOnLocalDatabase(
-        foundDeliveryLine: DeliveryLine
-    ) {
-        doAsync {
-            try {
-                    val certification = PendingToUploadCertification()
-                    certification.deliveryId = foundDeliveryLine.deliveryId
-                    certification.deliveryLineId = foundDeliveryLine.id
-                    certification.index = foundDeliveryLine.index
-                    certification.planificationId = foundDeliveryLine.planificationId
-                    certification.quantity = 1
-                    Log.i(TAG, "inserting certification pending to upload $certification")
-                    db?.pendingToUploadCertificationDao()?.insert(certification)
-                    //scannedCounter++
-                    viewModel.planification.value?.totalCertificate = (viewModel.planification.value?.totalCertificate ?: 0) + 1
-                    db?.planificationDao()?.update(viewModel.planification.value)
-                    Log.i(TAG, "planificaciones certificadas posterior ${viewModel.planification.value?.totalCertificate}")
-                    //Log.i(TAG, "delivery lines certificados hasta ahora: $certifiedCount")
-                    //foundDeliveryLine.scannedOrder = certifiedCount + 1
-                    db?.deliveryLineDao()?.update(foundDeliveryLine)
-                    //uploadCertifications(certification)
-            } catch (ex: SQLiteConstraintException) {
-                Log.e(TAG, "Error al guardar delivery line escaneada", ex)
-                showSnackbar("Error al guardar delivery line escaneada")
-                showAlert("Error Database", "Error al guardar delivery line escaneada")
-            } catch (ex: SQLiteException) {
-                Log.e(TAG, "Error al guardar delivery line escaneada", ex)
-                showSnackbar("Error al guardar delivery line escaneada")
-                showAlert("Error Database", "Error al guardar delivery line escaneada")
+            doAsync {
+                scanFailBeep?.start()
             }
-        }
-    }
-
-    fun showAlert(title: String, message: String, listener: (() -> Unit?)? = null) {
-        activity?.runOnUiThread {
-            val builder = AlertDialog.Builder(this.requireActivity())
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { _, _ ->
-                listener?.invoke()
-            })
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
-        }
-    }
-
-    private fun showHorizontalLoader() {
-        activity?.runOnUiThread {
-            progressBarHorizontal?.visibility = View.VISIBLE
-        }
-    }
-
-    private fun hideHorizontalLoader() {
-        activity?.runOnUiThread {
-            progressBarHorizontal?.visibility = View.INVISIBLE
+            updateStatus("Codigo No Encontrado")
         }
     }
 
@@ -566,26 +486,13 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
 
     override fun onDestroyView() {
         super.onDestroyView()
-        this.emdkManager?.release(FEATURE_TYPE.BARCODE);
-        this.emdkManager = null;
+        emdkManager?.release(FEATURE_TYPE.BARCODE)
+        emdkManager = null
+        scanTriggerBeep?.release()
+        scanTriggerBeep = null
+        scanFailBeep?.release()
+        scanFailBeep = null
+        scanSuccessBeep?.release()
+        scanSuccessBeep = null
     }
-/*
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater): Unit {
-        inflater.inflate(R.menu.menu_planification, menu)
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.startRoute -> {
-                startRoute()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    fun startRoute() {
-
-    }*/
 }

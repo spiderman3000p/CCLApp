@@ -71,8 +71,6 @@
             android:name="androidx.work.impl.WorkManagerInitializer"
             android:authorities="${applicationId}.workmanager-init"
             tools:node="remove" />
-        <activity android:name=".activities.Login2Activity"
-            android:theme="@style/Theme.CCLApp.NoActionBar"/>
         <activity
             android:name=".activities.ManageDeliveryActivity"
             android:label="@string/title_activity_manage_delivery"

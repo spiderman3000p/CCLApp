@@ -10,12 +10,13 @@ import android.view.ViewGroup
 import android.widget.Button
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
-import com.tautech.cclapp.activities.DeliveryDetailActivity
 import com.tautech.cclapp.R
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.activities.DeliveryDetailActivity
+import com.tautech.cclapp.models.Delivery
+import com.tautech.cclapp.models.Planification
 import kotlinx.android.synthetic.main.planification_card_item.view.*
 
-class PlanificationLineAdapter(private val dataList: MutableList<PlanificationLine> = mutableListOf(), val planification: Planification?, val context: Context):
+class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mutableListOf(), val planification: Planification?, val context: Context):
     RecyclerView.Adapter<PlanificationLineAdapter.MyViewHolder>() {
     class MyViewHolder(val itemView: View, val planification: Planification?): RecyclerView.ViewHolder(itemView) {
         val openButton: Button
@@ -26,7 +27,7 @@ class PlanificationLineAdapter(private val dataList: MutableList<PlanificationLi
                 openButton.visibility = View.VISIBLE
             }
         }
-        fun bindItems(delivery: PlanificationLine? = null) {
+        fun bindItems(delivery: Delivery? = null) {
             Log.i("Planification Line Adapter", "delivery: $delivery")
             itemView.unitsTv?.visibility = View.GONE
             var colorStateList: ColorStateList? = null
@@ -54,7 +55,7 @@ class PlanificationLineAdapter(private val dataList: MutableList<PlanificationLi
                 }
                 "UnDelivered" -> {
                     backgroundColor = ContextCompat.getColor(itemView.context, R.color.undelivered_bg)
-                    colorStateList = ContextCompat.getColorStateList(itemView.context, R.color.delivered_bg)
+                    colorStateList = ContextCompat.getColorStateList(itemView.context, R.color.undelivered_bg)
                 }
                 "Partial" -> {
                     backgroundColor = ContextCompat.getColor(itemView.context, R.color.partial_bg)
@@ -72,13 +73,13 @@ class PlanificationLineAdapter(private val dataList: MutableList<PlanificationLi
             itemView.cardView.setCardBackgroundColor(backgroundColor)
             itemView.stateTv.backgroundTintList = colorStateList
             itemView.stateTv.text = delivery?.deliveryState
-            itemView.titleTv?.text = "${delivery?.id}-${delivery?.referenceDocument ?: ""}"
+            itemView.titleTv?.text = "${delivery?.deliveryId}-${delivery?.referenceDocument ?: ""}"
             val operation = when(planification?.planificationType){
                 "National" -> itemView.context.getString(R.string.certified)
                 else -> itemView.context.getString(R.string.delivered)
             }
             val percent = when(planification?.planificationType){
-                "National" -> 0.00//TODO: necesito certificate para cada delivery
+                "National" -> (100 * (delivery?.totalCertified ?: 0) / (delivery?.totalQuantity ?: 1)).toDouble()
                 else -> (100 * (delivery?.totalDelivered ?: 0) / (delivery?.totalQuantity ?: 1)).toDouble()
             }
             val percentStr = String.format("%.2f", percent) + "% " + operation
@@ -86,6 +87,8 @@ class PlanificationLineAdapter(private val dataList: MutableList<PlanificationLi
             //itemView.progressBar.setProgress(percent.toInt(), true)
             itemView.customerTv?.text = delivery?.receiverName
             itemView.addressTv?.text = delivery?.receiverAddress
+            itemView.customerTv?.visibility = View.VISIBLE
+            itemView.addressTv?.visibility = View.VISIBLE
             itemView.dateTv?.text = delivery?.deliveryDate
             itemView.qtyTv?.text = delivery?.totalQuantity.toString()
             itemView.deliveryLinesTv?.text = delivery?.totalQuantity.toString()
@@ -102,12 +105,10 @@ class PlanificationLineAdapter(private val dataList: MutableList<PlanificationLi
         holder.bindItems(dataList[position])
         holder.openButton.setOnClickListener { view ->
             // iniciar nuevo activity
-            // TODO: quitar eso de estado = null
             val intent = Intent(view.context, DeliveryDetailActivity::class.java).apply {
                 putExtra("delivery", dataList[position])
                 putExtra("planification", planification)
             }
-            //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP and Intent.FLAG_ACTIVITY_CLEAR_TASK
             view.context.startActivity(intent)
         }
     }

@@ -8,7 +8,7 @@
     android:layout_marginTop="3dp"
     android:paddingTop="10dp"
     android:paddingBottom="10dp"
-    app:cardBackgroundColor="@color/primaryDarkColor"
+    app:cardBackgroundColor="@color/primaryColor"
     app:cardElevation="10dp"
     app:cardPreventCornerOverlap="true">
 
@@ -16,30 +16,30 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginLeft="10dp"
-        android:background="#FFFFFF"
-        android:paddingTop="10dp">
+        android:background="#FFFFFF">
 
         <TextView
             android:id="@+id/titleTv"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="15dp"
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="10dp"
             android:fontFamily="sans-serif-light"
-            android:text="Carga Electrolux"
+            android:maxLines="1"
             android:textColor="@color/primaryDarkColor"
-            android:textSize="18sp"
+            android:textSize="14sp"
             android:textStyle="bold"
-            app:layout_constraintEnd_toStartOf="@+id/dateTv"
+            app:layout_constraintEnd_toStartOf="@+id/openBtn"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@+id/dateTv" />
 
         <View
             android:id="@+id/divider"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="1dp"
             android:layout_marginTop="10dp"
             android:background="@color/secondaryLightColor"
-            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/openBtn"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/titleTv" />
 
@@ -55,6 +55,7 @@
             android:text="Carrera  #57. Cruce Cajigal Av 7 C/#423"
             android:textColor="@color/black"
             android:textSize="14sp"
+            android:visibility="gone"
             app:layout_constraintEnd_toStartOf="@+id/openBtn"
             app:layout_constraintHorizontal_bias="0.0"
             app:layout_constraintStart_toStartOf="parent"
@@ -71,6 +72,7 @@
             android:text="Electrolux"
             android:textColor="@color/black"
             android:textSize="14sp"
+            android:visibility="gone"
             app:layout_constraintEnd_toStartOf="@+id/openBtn"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/addressTv" />
@@ -80,6 +82,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="20dp"
+            android:layout_marginTop="10dp"
             android:layout_marginBottom="10dp"
             android:drawableLeft="@drawable/ic_truck_round"
             android:drawablePadding="10dp"
@@ -119,11 +122,11 @@
             android:textColor="@color/black"
             android:textSize="18sp"
             android:textStyle="bold"
+            android:visibility="gone"
             app:layout_constraintStart_toEndOf="@+id/deliveryLinesTv"
             app:layout_constraintTop_toTopOf="@+id/deliveryLinesTv" />
 
         <ImageButton
-            android:id="@+id/imageButton"
             style="@android:style/Widget.DeviceDefault.Light.ImageButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -152,13 +155,13 @@
             android:id="@+id/percentCertifiedTv"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="15dp"
             android:background="#00FFFFFF"
             android:text="50.00%"
             android:textColor="@color/secondaryColor"
-            android:textSize="14sp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/dateTv" />
+            android:textSize="12sp"
+            app:layout_constraintBottom_toTopOf="@+id/titleTv"
+            app:layout_constraintEnd_toEndOf="@+id/titleTv"
+            app:layout_constraintTop_toTopOf="@+id/dateTv" />
 
         <Button
             android:id="@+id/openBtn"
@@ -172,13 +175,13 @@
             app:iconPadding="0dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/divider" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <TextView
             android:id="@+id/dateTv"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="15dp"
+            android:layout_marginTop="10dp"
             android:drawablePadding="5dp"
             android:drawableTint="@color/black"
             android:singleLine="false"
@@ -186,14 +189,14 @@
             android:textAlignment="center"
             android:textSize="10sp"
             android:textStyle="bold"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@+id/titleTv" />
+            app:layout_constraintStart_toStartOf="@+id/titleTv"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <TextView
             android:id="@+id/stateTv"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
+            android:layout_marginEnd="10dp"
             android:background="@drawable/round_corners"
             android:backgroundTint="@color/primaryColor"
             android:paddingLeft="8dp"
@@ -202,9 +205,10 @@
             android:paddingBottom="2dp"
             android:text="@string/completed"
             android:textColor="#FFFFFF"
-            android:textSize="10sp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toStartOf="@+id/openBtn" />
+            android:textSize="12sp"
+            app:layout_constraintBottom_toBottomOf="@+id/deliveryLinesTv"
+            app:layout_constraintEnd_toStartOf="@+id/openBtn"
+            app:layout_constraintTop_toTopOf="@+id/deliveryLinesTv" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.cardview.widget.CardView>

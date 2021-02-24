@@ -11,7 +11,6 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import android.widget.Toast
 import androidx.annotation.MainThread
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -25,36 +24,26 @@ import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.interfaces.KeycloakDataService
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.KeycloakClient
-import org.json.JSONException
-import retrofit2.Retrofit
 import kotlinx.android.synthetic.main.activity_dashboard.*
 import net.openid.appauth.*
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.uiThread
 import org.joda.time.format.DateTimeFormat
+import org.json.JSONException
+import retrofit2.Retrofit
 import java.io.IOException
 import java.net.SocketTimeoutException
 
 class DashboardActivity: AppCompatActivity() {
-    /*val KEY_USER_INFO = "userInfo"
-    val KEY_PROFILE_INFO = "profileInfo"
-    val KEY_DRIVER_INFO = "driverInfo"*/
     val TAG = "DASHBOARD_ACTIVITY"
     private var retrofitClient: Retrofit? = null
     var db: AppDatabase? = null
-    /*private var mUserInfoJson: JSONObject? = null
-    private var userInfo: KeycloakUser? = null
-    private var driverInfo: Driver? = null*/
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: Configuration? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_dashboard)
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(this)
-        mConfiguration = Configuration.getInstance(this)
-        val config = Configuration.getInstance(this)
         try {
             db = AppDatabase.getDatabase(this)
         } catch(ex: SQLiteDatabaseLockedException) {
@@ -64,33 +53,10 @@ class DashboardActivity: AppCompatActivity() {
         } catch (ex: SQLiteCantOpenDatabaseException) {
             Log.e(TAG, "Database error found", ex)
         }
-        if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                this,
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            signOut()
-            return
-        }
-        mAuthService = AuthorizationService(
-            this,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         // the stored AuthState is incomplete, so check if we are currently receiving the result of
         // the authorization flow from the browser.
         val response = AuthorizationResponse.fromIntent(intent)
         val ex = AuthorizationException.fromIntent(intent)
-        /*if (response != null || ex != null) {
-            if (ex != null) {
-                Log.e(TAG, "Authorization exception. token exchange is imposible", ex)
-            }
-            if (response != null) {
-                Log.i(TAG, "Authorization response is not null.")
-            }
-            mStateManager!!.updateAfterAuthorization(response, ex)
-        }*/
         try {
             db = AppDatabase.getDatabase(this)
         } catch(ex: SQLiteDatabaseLockedException) {
@@ -100,16 +66,20 @@ class DashboardActivity: AppCompatActivity() {
         } catch (ex: SQLiteCantOpenDatabaseException) {
             Log.e(TAG, "Database error found", ex)
         }
-        if (response != null && response.authorizationCode != null) {
-            // authorization code exchange is required
-            Log.i(TAG, "exchanging token...")
-            mStateManager!!.updateAfterAuthorization(response, ex)
-            exchangeAuthorizationCode(response)
-        } else if (ex != null) {
-            Log.e(TAG, "Authorization flow failed: " + ex.message, ex)
-            refreshAccessToken()
-        } else if (mStateManager?.current?.isAuthorized == true) {
-            displayAuthorized()
+        when {
+            response?.authorizationCode != null -> {
+                // authorization code exchange is required
+                Log.i(TAG, "exchanging token...")
+                mStateManager?.updateAfterAuthorization(response, ex)
+                exchangeAuthorizationCode(response)
+            }
+            ex != null -> {
+                Log.e(TAG, "Authorization flow failed: " + ex.message, ex)
+                mStateManager?.refreshAccessToken()
+            }
+            mStateManager?.current?.isAuthorized == true -> {
+                displayAuthorized()
+            }
         }
         menuOptions.visibility = View.INVISIBLE
         urbanBtnTv.setOnClickListener{
@@ -123,43 +93,13 @@ class DashboardActivity: AppCompatActivity() {
         messageTv2.setOnClickListener{
             displayAuthorized()
         }
-        /*
-        if (savedInstanceState != null && mStateManager?.current == null) {
-            try {
-                val jsonString: String? = savedInstanceState.getString(KEY_USER_INFO)
-                if (jsonString != null && mStateManager?.userInfo == null) {
-                    mStateManager?.userInfo = JSONObject(jsonString)
-                    Log.i(TAG, "se recupero user info de savedInstanceState: ${mStateManager?.userInfo}")
-                }
-                if (savedInstanceState.containsKey(KEY_PROFILE_INFO) && mStateManager?.keycloakUser == null) {
-                    mStateManager?.keycloakUser = savedInstanceState.getSerializable(KEY_PROFILE_INFO) as KeycloakUser
-                    Log.i(TAG, "se recupero usuario keycloak de savedInstanceState: ${mStateManager?.keycloakUser}")
-                }
-                if (savedInstanceState.containsKey(KEY_DRIVER_INFO) && mStateManager?.driverInfo == null) {
-                    mStateManager?.driverInfo = savedInstanceState.getSerializable(KEY_DRIVER_INFO) as Driver
-                    Log.i(TAG, "se recupero driver de savedInstanceState: ${mStateManager?.driverInfo}")
-                }
-            } catch (ex: JSONException) {
-                Log.e(TAG, "Failed to parse saved user info JSON, discarding", ex)
-            }
-        } */
     }
 
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching data...")
         showLoader()
-        try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
-                callback)
-        }catch (ex: AuthorizationException) {
-            hideLoader()
-            runOnUiThread {
-                messageTv2.text = getText(R.string.parse_planifications_error)
-                messageTv2.visibility = View.VISIBLE
-            }
-            showSnackbar("Error fetching data")
-            Log.e(TAG, "error fetching data", ex)
-        }
+        mStateManager!!.current.performActionWithFreshTokens(mStateManager!!.mAuthService,
+            callback)
     }
 
     private fun displayAuthorized() {
@@ -167,7 +107,7 @@ class DashboardActivity: AppCompatActivity() {
         Log.i(TAG, "token: ${state.idToken ?: "no id token returned"}")
         if (state.accessToken == null) {
             Log.e(TAG, "token: ${state.accessToken ?: "no access token returned"}")
-            refreshAccessToken()
+            mStateManager?.refreshAccessToken()
             return
         } else {
             val expiresAt = state.accessTokenExpirationTime
@@ -176,91 +116,41 @@ class DashboardActivity: AppCompatActivity() {
             } else if (expiresAt < System.currentTimeMillis()) {
                 Log.i(TAG, "access token expired")
                 showSnackbar("Access token expired")
-                refreshAccessToken()
+                mStateManager?.refreshAccessToken()
             } else {
                 Log.i(TAG, "access token expires at: ${
                     DateTimeFormat
                         .forPattern("yyyy-MM-dd HH:mm:ss ZZ").print(expiresAt)
                 }")
-                /*if (AuthStateManager.userInfo == null) {
-                    Log.i(TAG, "No hay datos de user info guardados, solicitando user info...")
-                    fetchData(this::fetchUserInfo)
-                } else*/ if (AuthStateManager.keycloakUser == null) {
-                    Log.i(TAG, "No hay datos de keycloak user guardados, solicitando keycloak user data...")
-                    fetchData(this::fetchUserProfile)
-                }  else if (AuthStateManager.driverInfo == null) {
-                    Log.i(TAG, "No hay datos de driver guardados, solicitando datos de driver...")
-                    fetchData(this::fetchDriverInfo)
-                } else {
-                    runOnUiThread {
-                        messageTv2.visibility = View.GONE
-                        menuOptions.visibility = View.VISIBLE
+                when {
+                    mStateManager?.keycloakUser == null -> {
+                        Log.i(TAG, "No hay datos de keycloak user guardados, solicitando keycloak user data...")
+                        fetchData(this::fetchUserProfile)
                     }
-                    hideLoader()
+                    mStateManager?.driverInfo == null -> {
+                        Log.i(TAG, "No hay datos de driver guardados, solicitando datos de driver...")
+                        fetchData(this::fetchDriverInfo)
+                    }
+                    else -> {
+                        runOnUiThread {
+                            messageTv2.visibility = View.GONE
+                            menuOptions.visibility = View.VISIBLE
+                        }
+                        hideLoader()
+                    }
                 }
             }
         }
     }
 
     @MainThread
-    private fun refreshAccessToken() {
-        showLoader()
-        performTokenRequest(
-            mStateManager!!.current.createTokenRefreshRequest()
-        ) { tokenResponse: TokenResponse?, authException: AuthorizationException? ->
-            handleAccessTokenResponse(tokenResponse,
-                authException)
-        }
-    }
-
-    @MainThread
     private fun exchangeAuthorizationCode(authorizationResponse: AuthorizationResponse) {
         showLoader()
-        performTokenRequest(
+        mStateManager?.performTokenRequest(
             authorizationResponse.createTokenExchangeRequest()
         ) { tokenResponse: TokenResponse?, authException: AuthorizationException? ->
             handleCodeExchangeResponse(tokenResponse,
                 authException)
-        }
-    }
-
-    @MainThread
-    private fun performTokenRequest(
-        request: TokenRequest,
-        callback: AuthorizationService.TokenResponseCallback,
-    ) {
-        val clientAuthentication: ClientAuthentication
-        clientAuthentication = try {
-            mStateManager!!.current.clientAuthentication
-        } catch (ex: ClientAuthentication.UnsupportedAuthenticationMethod) {
-            Log.d(TAG,
-                "Token request cannot be made, client authentication for the token "
-                        + "endpoint could not be constructed (%s)",
-                ex)
-            Log.e(TAG, "Client authentication method is unsupported")
-            return
-        }
-        mAuthService!!.performTokenRequest(
-            request,
-            clientAuthentication,
-            callback)
-    }
-
-    @MainThread
-    private fun handleAccessTokenResponse(
-        tokenResponse: TokenResponse?,
-        authException: AuthorizationException?,
-    ) {
-        if (authException != null) {
-            hideLoader()
-            messageTv2.text = "Error loading user data. Touch here to try again"
-            messageTv2.visibility = View.VISIBLE
-            Log.e(TAG, "Exception trying to fetch token", authException)
-        } else {
-            mStateManager!!.updateAfterTokenResponse(tokenResponse, authException)
-            runOnUiThread{
-                displayAuthorized()
-            }
         }
     }
 
@@ -271,9 +161,7 @@ class DashboardActivity: AppCompatActivity() {
     ) {
         mStateManager!!.updateAfterTokenResponse(tokenResponse, authException)
         if (!mStateManager!!.current.isAuthorized) {
-            val message = ("Authorization Code exchange failed "
-                    + if (authException != null) authException.error else "")
-            signOut()
+            showAlert("Error", "Authorization Code exchange failed ", true)
         } else {
             runOnUiThread{
                 displayAuthorized()
@@ -302,18 +190,8 @@ class DashboardActivity: AppCompatActivity() {
     }
 
     private fun signOut() {
-        // discard the authorization and token state, but retain the configuration and
-        // dynamic client registration (if applicable), to save from retrieving them again.
-        val currentState = mStateManager!!.current
-        val clearedState = AuthState(currentState.authorizationServiceConfiguration!!)
-        if (currentState.lastRegistrationResponse != null) {
-            clearedState.update(currentState.lastRegistrationResponse)
-        }
-        mStateManager!!.replace(clearedState)
-        val mainIntent = Intent(this, LoginActivity::class.java)
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        finish()
+        mStateManager?.signOut(this)
+        //finish()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -337,15 +215,13 @@ class DashboardActivity: AppCompatActivity() {
     private fun fetchUserProfile(accessToken: String?, idToken: String?, ex: AuthorizationException?
     ) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when fetching user profile", ex)
-            AuthStateManager.keycloakUser = null
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban detalles del perfil de usuario", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-
+                showAlert("Sesion expirada", "Su sesion ha expirado", true)
             }
-            showAlert("Error", "Sesion Expirada", true)
             return
         }
-        val userProfileEndpoint = mConfiguration!!.userProfileEndpointUri.toString()
+        val userProfileEndpoint = mStateManager?.mConfiguration?.userProfileEndpointUri.toString()
         Log.i(TAG, "constructed user profile endpoint: $userProfileEndpoint")
         val dataService: KeycloakDataService? = KeycloakClient.getInstance()?.create(
             KeycloakDataService::class.java)
@@ -360,18 +236,18 @@ class DashboardActivity: AppCompatActivity() {
                     hideLoader()
                     Log.i(TAG, "user profile response $response")
                     if (response != null) {
-                        AuthStateManager.keycloakUser = response
+                        mStateManager?.keycloakUser = response
                         val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
                         val gson = Gson()
                         with(sharedPref.edit()) {
                             putString("keycloakUserJSON", gson.toJson(response))
                             commit()
                         }
-                        Log.i(TAG, "user profile fetched ${AuthStateManager.keycloakUser}")
-                        if (AuthStateManager.keycloakUser.attributes?.userType?.get(0)
+                        Log.i(TAG, "user profile fetched ${mStateManager?.keycloakUser}")
+                        if (mStateManager?.keycloakUser?.attributes?.userType?.get(0)
                                 .equals("driver")
                         ) {
-                            if (AuthStateManager.driverInfo == null) {
+                            if (mStateManager?.driverInfo == null) {
                                 fetchData(this@DashboardActivity::fetchDriverInfo)
                             }
                         } else {
@@ -380,7 +256,6 @@ class DashboardActivity: AppCompatActivity() {
                         }
                     }
                 } catch(toe: SocketTimeoutException) {
-
                         hideLoader()
                         showSnackbar("Network Error fetching user profile")
                     uiThread {
@@ -392,12 +267,16 @@ class DashboardActivity: AppCompatActivity() {
                     Log.e(TAG,
                         "Network error when querying user profile endpoint",
                         ioEx)
-                    messageTv2.text = getText(R.string.fetching_profile_error)
-                    messageTv2.visibility = View.VISIBLE
+                    uiThread {
+                        messageTv2.text = getText(R.string.fetching_profile_error)
+                        messageTv2.visibility = View.VISIBLE
+                    }
                 } catch (jsonEx: JSONException) {
                     Log.e(TAG, "Failed to parse user profile response", jsonEx)
-                    messageTv2.text = getText(R.string.fetching_profile_error)
-                    messageTv2.visibility = View.VISIBLE
+                    uiThread {
+                        messageTv2.text = getText(R.string.fetching_profile_error)
+                        messageTv2.visibility = View.VISIBLE
+                    }
                 }
             }
         }
@@ -405,22 +284,16 @@ class DashboardActivity: AppCompatActivity() {
 
     fun fetchDriverInfo(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when fetching driver info", ex)
-            AuthStateManager.driverInfo = null
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban detalles del conductor", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
+                showAlert("Sesion expirada", "Su sesion ha expirado", true)
             }
-            showAlert("Error", "Sesion Expirada", true)
             return
         }
-        if (AuthStateManager.keycloakUser == null) {
-            Log.e(TAG, "El usuario keycloak es null. No se puede obtener datos del conductor")
-            return
-        }
-        val url = "drivers/${AuthStateManager.keycloakUser.attributes?.driverId?.get(0)}"
+        val url = "drivers/${mStateManager?.keycloakUser?.attributes?.driverId?.get(0)}"
         Log.i(TAG, "driver info endpoint: ${url}")
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
-
         if (dataService != null && accessToken != null) {
             doAsync {
                 try {
@@ -429,12 +302,12 @@ class DashboardActivity: AppCompatActivity() {
                     val response = call.body()
                     hideLoader()
                     if (response != null) {
-                        AuthStateManager.driverInfo = response
-                        Log.i(TAG, "driver info response ${AuthStateManager.driverInfo}")
+                        mStateManager?.driverInfo = response
+                        Log.i(TAG, "driver info response ${mStateManager?.driverInfo}")
                         val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
                         val gson = Gson()
                         with(sharedPref.edit()) {
-                            putString("driverInfoJSON", gson.toJson(AuthStateManager.driverInfo))
+                            putString("driverInfoJSON", gson.toJson(mStateManager?.driverInfo))
                             commit()
                         }
                         uiThread {
@@ -444,7 +317,7 @@ class DashboardActivity: AppCompatActivity() {
                         Log.e(TAG, "la respuesta de driver info es null")
                         return@doAsync
                     }
-                    Log.i(TAG, "driver info fetched: ${AuthStateManager.driverInfo}")
+                    Log.i(TAG, "driver info fetched: ${mStateManager?.driverInfo}")
                 } catch(toe: SocketTimeoutException) {
                     hideLoader()
                     showSnackbar("Fetching driver failed")
@@ -483,67 +356,6 @@ class DashboardActivity: AppCompatActivity() {
             }
         }
     }
-
-    /*private fun fetchUserInfo(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
-        if (ex != null) {
-            Log.e(TAG, "Token refresh failed when fetching user info", ex)
-            AuthStateManager.userInfo = null
-            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-            }
-            runOnUiThread {
-                showAlert("Error", "Sesion Expirada", true)
-            }
-            return
-        }
-        val userInfoEndpoint = mConfiguration!!.userInfoEndpointUri.toString()
-        //Log.i(TAG, "constructed user endpoint: $userInfoEndpoint")
-        val dataService: KeycloakDataService? = KeycloakClient().getInstance()?.create(
-            KeycloakDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            doAsync {
-                try {
-                    showLoader()
-                    val call = dataService.getUserInfo(userInfoEndpoint,
-                        "Bearer $accessToken")
-                        .execute()
-                    val response = call.body()
-                    hideLoader()
-                    Log.i(TAG, "user info response $response")
-                    if (response != null && response.has("id")) {
-                        //AuthStateManager.userInfo = response
-                        val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
-                        val gson = Gson()
-                        with(sharedPref.edit()) {
-                            putString("userInfo", gson.toJson(response))
-                            commit()
-                        }
-                        //Log.i(TAG, "user info fetched ${AuthStateManager.userInfo}")
-                        if (AuthStateManager.keycloakUser == null) {
-                            fetchData(this@DashboardActivity::fetchUserProfile)
-                        }
-                    }
-                } catch(toe: SocketTimeoutException) {
-                    uiThread {
-                        hideLoader()
-                        showSnackbar("Fetching user profile failed")
-                        messageTv2.text = getText(R.string.fetching_userinfo_error)
-                        messageTv2.visibility = View.VISIBLE
-                        Log.e(TAG, "Network error when querying planification lines endpoint", toe)
-                    }
-                } catch (ioEx: IOException) {
-                    Log.e(TAG,
-                        "Network error when querying userinfo endpoint",
-                        ioEx)
-                    messageTv2.text = getText(R.string.fetching_userinfo_error)
-                    messageTv2.visibility = View.VISIBLE
-                } catch (jsonEx: JSONException) {
-                    Log.e(TAG, "Failed to parse userinfo response", jsonEx)
-                    messageTv2.text = getText(R.string.fetching_userinfo_error)
-                    messageTv2.visibility = View.VISIBLE
-                }
-            }
-        }
-    }*/
 
     fun hideLoader() {
         runOnUiThread {

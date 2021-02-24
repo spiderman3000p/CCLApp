@@ -4,10 +4,10 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.SeekBar
 import androidx.recyclerview.widget.RecyclerView
 import com.tautech.cclapp.R
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.DeliveryLine
+import com.tautech.cclapp.models.PlanificationLine
 import kotlinx.android.synthetic.main.last_readed_item.view.*
 import java.util.*
 
@@ -16,7 +16,7 @@ class DeliveryLineAdapter(private val dataList: MutableList<DeliveryLine>, val c
 
     class MyViewHolder(val itemView: View, val readed: Boolean): RecyclerView.ViewHolder(itemView) {
         fun bindItems(deliveryLine: DeliveryLine, delivery: PlanificationLine? = null) {
-            itemView.skuDescriptionTv .text = deliveryLine.referenceDescription
+            itemView.skuDescriptionTv .text = deliveryLine.description
             itemView.deliveryBtn.text = "Delivery ${deliveryLine.deliveryId}"
             itemView.referenceTv.text = deliveryLine.reference
             itemView.timestampTv.text = Date().toString()

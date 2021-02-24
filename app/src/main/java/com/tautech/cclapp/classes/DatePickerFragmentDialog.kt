@@ -13,7 +13,7 @@ import java.util.*
 
 
 class DatePickerFragmentDialog(val index: Int) : DialogFragment(), DatePickerDialog.OnDateSetListener{
-    val c = Calendar.getInstance()
+    val c: Calendar = Calendar.getInstance()
     val TAG = "DATEPICKER_FRAGMENT"
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val year = c.get(Calendar.YEAR)

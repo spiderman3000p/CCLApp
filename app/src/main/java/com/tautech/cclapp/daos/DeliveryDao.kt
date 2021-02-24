@@ -1,43 +1,44 @@
 package com.tautech.cclapp.daos
 
 import androidx.room.*
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.Delivery
+import com.tautech.cclapp.models.DeliveryLine
 
 @Dao
 interface DeliveryDao {
-    @Query("SELECT * FROM planificationline")
-    fun getAll(): List<PlanificationLine>
+    @Query("SELECT * FROM delivery")
+    fun getAll(): List<Delivery>
 
-    @Query("SELECT * FROM planificationline WHERE deliveryDate = :date")
-    fun getAll(date: String): List<PlanificationLine>
+    @Query("SELECT * FROM delivery WHERE orderDate = :date")
+    fun getAll(date: String): List<Delivery>
 
     @Query("SELECT * FROM deliveryline WHERE deliveryId = CAST(:deliveryId AS NUMERIC)")
     fun getLines(deliveryId: Long): List<DeliveryLine>
 
-    @Query("SELECT * FROM deliveryline WHERE deliveryId = CAST(:deliveryId AS NUMERIC) GROUP BY deliveryLineId")
+    @Query("SELECT * FROM deliveryline WHERE deliveryId = CAST(:deliveryId AS NUMERIC) GROUP BY id")
     fun getGroupedLines(deliveryId: Long): List<DeliveryLine>
 
-    @Query("SELECT * FROM planificationline WHERE planificationId = CAST(:planificationId AS NUMERIC)")
-    fun getAllByPlanification(planificationId: Int): List<PlanificationLine>
+    @Query("SELECT * FROM delivery WHERE planificationId = CAST(:planificationId AS NUMERIC)")
+    fun getAllByPlanification(planificationId: Int): List<Delivery>
 
-    @Query("SELECT * FROM planificationline WHERE id IN (:planificationLineIds)")
-    fun loadAllByIds(planificationLineIds: IntArray): List<PlanificationLine>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insert(planificationLine: PlanificationLine)
+    @Query("SELECT * FROM delivery WHERE deliveryid IN (:deliveryIds)")
+    fun loadAllByIds(deliveryIds: IntArray): List<Delivery>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertAll(planificationLines: MutableList<PlanificationLine>)
+    fun insert(delivery: Delivery)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertAll(deliveries: MutableList<Delivery>)
 
     @Update()
-    fun update(planificationLine: PlanificationLine)
+    fun update(delivery: Delivery)
 
     @Delete
-    fun delete(planificationLine: PlanificationLine)
+    fun delete(delivery: Delivery)
 
-    @Query("DELETE FROM planificationline")
+    @Query("DELETE FROM delivery")
     fun deleteAll()
 
-    @Query("SELECT * FROM planificationline WHERE id = :id")
-    fun getById(id: Long?): PlanificationLine
+    @Query("SELECT * FROM delivery WHERE deliveryid = CAST(:id AS NUMERIC)")
+    fun getById(id: Long?): Delivery
 }

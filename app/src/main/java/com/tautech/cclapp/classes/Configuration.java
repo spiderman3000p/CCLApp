@@ -39,6 +39,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import okio.Buffer;
@@ -75,7 +76,6 @@ public final class Configuration {
     private Uri mAuthEndpointUri;
     private Uri mTokenEndpointUri;
     private Uri mRegistrationEndpointUri;
-    private String mUserInfoEndpointUri;
     private String mUserProfileEndpointUri;
     private boolean mHttpsRequired;
 
@@ -83,7 +83,7 @@ public final class Configuration {
         Configuration config = sInstance.get();
         if (config == null) {
             config = new Configuration(context);
-            sInstance = new WeakReference<Configuration>(config);
+            sInstance = new WeakReference<>(config);
         }
 
         return config;
@@ -114,14 +114,6 @@ public final class Configuration {
      */
     public boolean isValid() {
         return mConfigError == null;
-    }
-
-    /**
-     * Returns a description of the configuration error, if the configuration is invalid.
-     */
-    @Nullable
-    public String getConfigurationError() {
-        return mConfigError;
     }
 
     /**
@@ -168,10 +160,6 @@ public final class Configuration {
     }
 
     @Nullable
-    public String getUserInfoEndpointUri() {
-        return mUserInfoEndpointUri;
-    }
-    @Nullable
     public String getUserProfileEndpointUri() {
         return mUserProfileEndpointUri;
     }
@@ -197,7 +185,7 @@ public final class Configuration {
         Buffer configData = new Buffer();
         try {
             configSource.readAll(configData);
-            mConfigJson = new JSONObject(configData.readString(Charset.forName("UTF-8")));
+            mConfigJson = new JSONObject(configData.readString(StandardCharsets.UTF_8));
         } catch (IOException ex) {
             throw new InvalidConfigurationException(
                     "Failed to read configuration: " + ex.getMessage());
@@ -223,7 +211,6 @@ public final class Configuration {
             mAuthEndpointUri = getRequiredConfigWebUri("authorization_endpoint_uri");
 
             mTokenEndpointUri = getRequiredConfigWebUri("token_endpoint_uri");
-            mUserInfoEndpointUri = getRequiredConfigString("user_info_endpoint_uri");
             mUserProfileEndpointUri = getRequiredConfigString("user_profile_endpoint_uri");
 
             if (mClientId == null) {
@@ -239,15 +226,10 @@ public final class Configuration {
     @Nullable
     String getConfigString(String propName) {
         String value = mConfigJson.optString(propName);
-        if (value == null) {
-            return null;
-        }
-
         value = value.trim();
         if (TextUtils.isEmpty(value)) {
             return null;
         }
-
         return value;
     }
 
@@ -268,12 +250,8 @@ public final class Configuration {
             throws InvalidConfigurationException {
         String uriStr = getRequiredConfigString(propName);
         Uri uri;
-        String host;
-        String scheme;
         try {
             uri = Uri.parse(uriStr);
-            host = uri.getHost();
-            scheme = uri.getScheme();
         } catch (Throwable ex) {
             throw new InvalidConfigurationException(propName + " could not be parsed", ex);
         }
@@ -321,12 +299,6 @@ public final class Configuration {
         redirectIntent.addCategory(Intent.CATEGORY_BROWSABLE);
         redirectIntent.setData(mRedirectUri);
         List<ResolveInfo> intentInfo = mContext.getPackageManager().queryIntentActivities(redirectIntent, 0);
-        try {
-            PackageInfo packageInfo = mContext.getPackageManager().getPackageInfo(packageName, PackageManager.GET_ACTIVITIES);
-            ActivityInfo[] activities = packageInfo.activities;
-        } catch (PackageManager.NameNotFoundException e) {
-            e.printStackTrace();
-        }
         return !intentInfo.isEmpty();
     }
 

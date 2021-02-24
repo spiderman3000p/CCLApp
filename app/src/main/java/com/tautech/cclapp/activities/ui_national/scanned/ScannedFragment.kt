@@ -3,7 +3,10 @@ package com.tautech.cclapp.activities.ui_national.scanned
 import android.content.DialogInterface
 import android.os.Bundle
 import android.util.Log
-import android.view.*
+import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -14,9 +17,9 @@ import com.google.android.material.snackbar.Snackbar
 import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.CertificateActivity
 import com.tautech.cclapp.activities.CertificateActivityViewModel
-import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.DeliveryLineAdapter
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.models.DeliveryLine
@@ -42,7 +45,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         val root = inflater.inflate(R.layout.fragment_scanned, container, false)
         db = AppDatabase.getDatabase(requireContext())
         viewModel.certifiedDeliveryLines.observe(viewLifecycleOwner, Observer{certifiedDeliveryLines ->
-            Log.i(TAG, "pending delivery lines observed: $certifiedDeliveryLines")
+            Log.i(TAG, "certified delivery lines observed: $certifiedDeliveryLines")
             filteredData.clear()
             filteredData = certifiedDeliveryLines
             mAdapter?.notifyDataSetChanged()
@@ -280,7 +283,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
             activity?.runOnUiThread {
                 mAdapter?.notifyDataSetChanged()
             }
-            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertificate}")
+            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertified}")
         } else {
             updateStatus("Codigo No Encontrado")
         }

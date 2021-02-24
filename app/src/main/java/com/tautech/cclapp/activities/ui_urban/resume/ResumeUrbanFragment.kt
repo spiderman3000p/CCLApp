@@ -7,10 +7,9 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
-import com.tautech.cclapp.*
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
-import kotlinx.android.synthetic.main.fragment_resume.*
 import kotlinx.android.synthetic.main.fragment_resume_urban.*
 
 class ResumeUrbanFragment : Fragment() {
@@ -23,9 +22,6 @@ class ResumeUrbanFragment : Fragment() {
     ): View? {
         val root = inflater.inflate(R.layout.fragment_resume_urban, container, false)
         viewModel.deliveries.observe(viewLifecycleOwner, Observer{
-            initCounters()
-        })
-        viewModel.deliveryLines.observe(viewLifecycleOwner, Observer{
             initCounters()
         })
         return root

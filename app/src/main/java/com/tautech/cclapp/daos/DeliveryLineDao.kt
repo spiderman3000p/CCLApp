@@ -2,7 +2,6 @@ package com.tautech.cclapp.daos
 
 import androidx.room.*
 import com.tautech.cclapp.models.DeliveryLine
-import com.tautech.cclapp.models.PlanificationLine
 
 @Dao
 interface DeliveryLineDao {
@@ -15,17 +14,17 @@ interface DeliveryLineDao {
     @Query("SELECT * FROM deliveryline where uploaded = 0")
     fun getAllToUpload(): List<DeliveryLine>
 
-    @Query("SELECT * FROM deliveryline WHERE deliveryLineId IN (:deliveryLineIds)")
-    fun loadAllByIds(deliveryLineIds: IntArray): List<DeliveryLine>
+    @Query("SELECT * FROM deliveryline WHERE id IN (:ids)")
+    fun loadAllByIds(ids: IntArray): List<DeliveryLine>
 
-    @Query("SELECT COUNT(*) > 0 FROM deliveryline WHERE deliveryLineId = CAST(:deliveryLineId AS NUMERIC) AND `index` = CAST(:index AS NUMERIC)")
-    fun exists(deliveryLineId: Int, index: Int): Boolean
+    @Query("SELECT COUNT(*) > 0 FROM deliveryline WHERE id = CAST(:id AS NUMERIC) AND `index` = CAST(:index AS NUMERIC)")
+    fun exists(id: Int, index: Int): Boolean
 
-    @Query("SELECT COUNT(*) FROM deliveryline AS A WHERE planificationId = CAST(:deliveryLineId AS NUMERIC) AND A.deliveryLineId IN (SELECT deliveryLineId FROM certification WHERE planificationId = A.planificationId AND `index` = A.`index` AND deliveryLineId = A.deliveryLineId)")
-    fun countCertified(deliveryLineId: Int): Int
+    @Query("SELECT COUNT(*) FROM deliveryline AS A WHERE planificationId = CAST(:id AS NUMERIC) AND A.id IN (SELECT deliveryLineId FROM certification WHERE planificationId = A.planificationId AND `index` = A.`index` AND deliveryLineId = A.id)")
+    fun countCertified(id: Int): Int
 
-    @Query("SELECT * FROM deliveryline WHERE deliveryLineId = CAST(:deliveryLineId AS NUMERIC)")
-    fun get(deliveryLineId: Int): DeliveryLine
+    @Query("SELECT * FROM deliveryline WHERE id = CAST(:id AS NUMERIC)")
+    fun get(id: Int): DeliveryLine
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(deliveryLine: DeliveryLine)
@@ -45,25 +44,15 @@ interface DeliveryLineDao {
     @Query("SELECT * FROM deliveryline WHERE planificationId = CAST(:planificationId AS NUMERIC)")
     fun getAllByPlanification(planificationId: Int): List<DeliveryLine>
 
-    @Query("SELECT A.* FROM deliveryline AS A WHERE A.deliveryLineId = CAST(:deliveryLineId AS NUMERIC) AND A.`index` = CAST(:index AS NUMERIC) AND A.deliveryLineId IN (SELECT deliveryLineId FROM certification WHERE planificationId = A.planificationId AND `index` = CAST(:index AS NUMERIC) AND deliveryLineId = CAST(:deliveryLineId AS NUMERIC))")
-    fun hasBeenCertified(deliveryLineId: Int, index: Int?): DeliveryLine
+    @Query("SELECT A.* FROM deliveryline AS A WHERE A.id = CAST(:id AS NUMERIC) AND A.`index` = CAST(:index AS NUMERIC) AND A.id IN (SELECT B.deliveryLineId FROM certification B WHERE B.planificationId = A.planificationId AND B.`index` = CAST(:index AS NUMERIC) AND B.id = CAST(:id AS NUMERIC))")
+    fun hasBeenCertified(id: Int, index: Int?): DeliveryLine
 
-    @Query("SELECT A.* FROM deliveryline AS A WHERE A.planificationId = CAST(:planificationId AS NUMERIC) AND A.deliveryLineId IN (SELECT B.deliveryLineId FROM certification AS B WHERE B.planificationId = CAST(:planificationId AS NUMERIC) AND B.`index` = A.`index` AND B.deliveryLineId = A.deliveryLineId)")
+    @Query("SELECT A.* FROM deliveryline AS A WHERE A.planificationId = CAST(:planificationId AS NUMERIC) AND A.id IN (SELECT B.deliveryLineId FROM certification AS B WHERE B.planificationId = CAST(:planificationId AS NUMERIC) AND B.`index` = A.`index` AND B.deliveryLineId = A.id)")
     fun getAllCertifiedByPlanification(planificationId: Int): List<DeliveryLine>
 
-    @Query("SELECT * FROM deliveryline where uploaded = 0 AND planificationId = CAST(:planificationId AS NUMERIC)")
-    fun getAllToUploadByPlanification(planificationId: Int): List<DeliveryLine>
-
-    @Query("SELECT A.* FROM deliveryline AS A WHERE A.planificationId = CAST(:planificationId AS NUMERIC) AND A.deliveryLineId NOT IN (SELECT deliveryLineId FROM certification WHERE planificationId = CAST(:planificationId AS NUMERIC) AND `index` = A.`index` AND deliveryLineId = A.deliveryLineId)")
+    @Query("SELECT A.* FROM deliveryline AS A WHERE A.planificationId = CAST(:planificationId AS NUMERIC) AND A.id NOT IN (SELECT B.deliveryLineId FROM certification AS B WHERE B.planificationId = CAST(:planificationId AS NUMERIC) AND B.`index` = A.`index` AND B.deliveryLineId = A.id)")
     fun getAllPendingByPlanification(planificationId: Int): List<DeliveryLine>
 
-    @Query("SELECT * FROM deliveryline WHERE deliveryLineId IN (:ids)")
-    fun getAllByIds(ids: IntArray): List<DeliveryLine>
-
-    /*@Query("UPDATE deliveryline SET certified=1 WHERE deliveryLineId IN (:ids)")
-    fun setCertifiedWhereIn(ids: List<Int>): Int*/
-/*
-    @Query("SELECT * FROM deliveryline WHERE planificationId = CAST(:planificationId AS NUMERIC) AND certified = 1")
-    suspend fun getAllCertifiedByPlanificationLiveData(planificationId: Int): LiveData<List<deliveryline>>
- */
+    @Query("SELECT * FROM deliveryline WHERE id IN (:ids)")
+    fun getAllByIds(ids: LongArray): List<DeliveryLine>
 }

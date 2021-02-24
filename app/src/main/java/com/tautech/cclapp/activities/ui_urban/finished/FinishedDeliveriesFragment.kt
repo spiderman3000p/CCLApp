@@ -3,7 +3,10 @@ package com.tautech.cclapp.activities.ui_urban.finished
 import android.content.DialogInterface
 import android.os.Bundle
 import android.util.Log
-import android.view.*
+import android.view.KeyEvent
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -15,13 +18,13 @@ import com.google.android.material.snackbar.Snackbar
 import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
+import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
-import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.PlanificationLineAdapter
+import com.tautech.cclapp.models.Delivery
 import com.tautech.cclapp.models.PlanificationLine
 import kotlinx.android.synthetic.main.fragment_finished_urban.*
-import kotlinx.android.synthetic.main.fragment_finished_urban.searchEt4
 import org.jetbrains.anko.doAsync
 
 class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
@@ -30,7 +33,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
     private var barcodeManager: BarcodeManager? = null;
     private var scanner: Scanner? = null;
     private val viewModel: PlanificationDetailActivityViewModel by activityViewModels()
-    private var filteredData: MutableList<PlanificationLine> = mutableListOf()
+    private var filteredData: MutableList<Delivery> = mutableListOf()
     val TAG = "FINISHED_DELIVERIES_FRAGMENT"
     private var mAdapter: PlanificationLineAdapter? = null
     override fun onCreateView(
@@ -62,7 +65,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
 
         searchEt4.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
-                if (searchEt4.text.length > 0) {
+                if (searchEt4.text.isNotEmpty()) {
                     searchData(searchEt4.text.toString())
                 }
             }
@@ -255,7 +258,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
         Log.i(TAG, "delivery id readed: $deliveryId")
         Log.i(TAG, "delivery line id readed: $deliveryLineId")
         Log.i(TAG, "index readed: $index")
-        var foundDeliveryLines: List<PlanificationLine>? = listOf()
+        var foundDeliveryLines: List<Delivery>? = listOf()
         //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
         if (viewModel.deliveries.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
             /*for (deliveryLine in scannedViewModel.certificatedLines.value!!) {
@@ -264,7 +267,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
                 }
             }*/
             foundDeliveryLines = viewModel.deliveries.value!!.filter { d ->
-                d.id == deliveryId && listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(d.deliveryState)
+                d.deliveryId == deliveryId && listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(d.deliveryState)
             }
         } else {
             Log.e(TAG, "Error con datos de entrada")
@@ -280,7 +283,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
             activity?.runOnUiThread {
                 mAdapter?.notifyDataSetChanged()
             }
-            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertificate}")
+            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertified}")
         } else {
             updateStatus("Codigo No Encontrado")
         }

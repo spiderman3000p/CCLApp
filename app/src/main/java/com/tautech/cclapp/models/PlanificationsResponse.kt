@@ -1,9 +1,12 @@
 package com.tautech.cclapp.models
 
+import java.io.Serializable
+
 data class PlanificationsResponse(
-    val content: ArrayList<Planification> = arrayListOf(),
-    val pageNumber: Int? = null,
-    val pageSize: Int? = null,
-    val totalElements: Int? = null,
-    val totalPages: Int? = null) {
+    val _embedded: PlanificationResponseHolder) {
+}
+
+data class PlanificationResponseHolder(
+    val planificationVO2s: ArrayList<Planification> = arrayListOf()
+): Serializable {
 }

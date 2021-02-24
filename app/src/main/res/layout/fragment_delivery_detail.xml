@@ -5,8 +5,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".activities.ui_delivery_detail.delivery_detail.DeliveryDetailFragment">
+
     <androidx.constraintlayout.widget.ConstraintLayout
-        android:id="@+id/frameLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/gradient_blue">
@@ -27,7 +27,6 @@
                 android:id="@+id/deliveryNumberTv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/_12345"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
                 android:textStyle="bold" />
@@ -35,9 +34,11 @@
             <TextView
                 android:id="@+id/receiverNameTv"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="5dp"
-                android:text="@string/rafael_cardona"
+                android:layout_height="30dp"
+                android:layout_marginTop="10dp"
+                android:lines="1"
+                android:maxLines="1"
+                android:singleLine="true"
                 android:textAppearance="@style/TextAppearance.AppCompat.Display1"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
@@ -45,12 +46,10 @@
                 android:typeface="normal" />
 
             <TextView
-                android:id="@+id/deliveryDateTv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
                 android:drawablePadding="10dp"
-                android:text="@string/_2021_01_18"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 app:drawableStartCompat="@drawable/ic_clock___1315_"
@@ -62,7 +61,6 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
                 android:drawablePadding="10dp"
-                android:text="@string/example_address"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 app:drawableLeftCompat="@drawable/ic_pin_sharp_circle"
@@ -76,7 +74,8 @@
                 android:text="@string/sender_info"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                tools:visibility="gone" />
 
             <TextView
                 android:id="@+id/senderNameTv"
@@ -88,7 +87,8 @@
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 app:drawableLeftCompat="@drawable/ic_profile_round___1342_"
-                app:drawableTint="#FFFFFF" />
+                app:drawableTint="#FFFFFF"
+                tools:visibility="gone" />
 
             <TextView
                 android:id="@+id/citySenderNameTv"
@@ -100,7 +100,8 @@
                 android:textColor="#FFFFFF"
                 android:textSize="14sp"
                 app:drawableLeftCompat="@drawable/ic_pin_sharp_circle"
-                app:drawableTint="#FFFFFF" />
+                app:drawableTint="#FFFFFF"
+                tools:visibility="gone" />
 
             <TextView
                 android:id="@+id/completedTv"
@@ -123,8 +124,6 @@
             android:id="@+id/deliveryStateChip"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="5dp"
-            android:layout_marginEnd="10dp"
             android:checkable="false"
             android:checked="false"
             android:elegantTextHeight="false"
@@ -135,24 +134,26 @@
             android:textStyle="bold"
             app:checkedIconVisible="false"
             app:chipBackgroundColor="#E48814"
+            app:layout_constraintBottom_toBottomOf="@+id/howGoBtn"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/howGoBtn" />
 
         <Button
             android:id="@+id/howGoBtn"
             style="@style/buttonStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
             android:layout_marginEnd="10dp"
-            android:layout_marginBottom="50dp"
             android:text="@string/how_go"
             android:textAllCaps="false"
             android:textSize="12sp"
-            app:layout_constraintBottom_toBottomOf="@+id/linearLayout2"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <FrameLayout
-            android:id="@+id/frame"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -200,7 +201,6 @@
                         android:text="0" />
 
                     <TextView
-                        android:id="@+id/totalItemsTv"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
@@ -234,7 +234,6 @@
                         android:text="0" />
 
                     <TextView
-                        android:id="@+id/totalCertifiedItemsTv"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
@@ -268,7 +267,6 @@
                         android:text="0 Kg" />
 
                     <TextView
-                        android:id="@+id/totalWeightTv"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
@@ -302,7 +300,6 @@
                         android:text="0 $" />
 
                     <TextView
-                        android:id="@+id/totalValueTv"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"

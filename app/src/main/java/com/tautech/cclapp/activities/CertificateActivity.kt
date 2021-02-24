@@ -1,7 +1,6 @@
 package com.tautech.cclapp.activities
 
 import android.content.DialogInterface
-import android.content.Intent
 import android.database.sqlite.*
 import android.os.Bundle
 import android.util.Log
@@ -9,29 +8,27 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
-import com.google.android.material.bottomnavigation.BottomNavigationView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
-import androidx.work.*
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.snackbar.Snackbar
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
-import com.tautech.cclapp.classes.UploadFailedCertificationsWorker
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.*
+import com.tautech.cclapp.models.DeliveryLine
+import com.tautech.cclapp.models.Planification
+import com.tautech.cclapp.models.PlanificationLine
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.MyWorkerManagerService
 import kotlinx.android.synthetic.main.activity_main.*
 import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
 import org.jetbrains.anko.contentView
@@ -40,7 +37,6 @@ import org.json.JSONException
 import retrofit2.Retrofit
 import java.io.IOException
 import java.net.SocketTimeoutException
-import java.util.concurrent.TimeUnit
 
 
 class CertificateActivity : AppCompatActivity() {
@@ -49,9 +45,7 @@ class CertificateActivity : AppCompatActivity() {
     val KEY_PLANIFICATION_INFO = "planification"
     private var retrofitClient: Retrofit? = null
     var planification: Planification? = null
-    private var mAuthService: AuthorizationService? = null
     private var mStateManager: AuthStateManager? = null
-    private var mConfiguration: com.tautech.cclapp.classes.Configuration? = null
     private var routeStarted: Boolean = false
     var db: AppDatabase? = null
     private val viewModel: CertificateActivityViewModel by viewModels()
@@ -73,8 +67,6 @@ class CertificateActivity : AppCompatActivity() {
         supportActionBar?.setDisplayShowHomeEnabled(true)
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(this)
-        mConfiguration = com.tautech.cclapp.classes.Configuration.getInstance(this)
-        val config = com.tautech.cclapp.classes.Configuration.getInstance(this)
         try {
             db = AppDatabase.getDatabase(this)
         } catch(ex: SQLiteDatabaseLockedException) {
@@ -84,23 +76,8 @@ class CertificateActivity : AppCompatActivity() {
         } catch (ex: SQLiteCantOpenDatabaseException) {
             Log.e(TAG, "Database error found", ex)
         }
-        if (config.hasConfigurationChanged()) {
-            Toast.makeText(
-                this,
-                "Configuration change detected",
-                Toast.LENGTH_SHORT)
-                .show()
-            signOut()
-            return
-        }
-        mAuthService = AuthorizationService(
-            this,
-            AppAuthConfiguration.Builder()
-                .setConnectionBuilder(config.connectionBuilder)
-                .build())
         if (!mStateManager!!.current.isAuthorized) {
-            Log.i(TAG, "No hay autorizacion para el usuario")
-            signOut()
+            showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             return
         }
         viewModel.planification.observe(this, Observer{_planification ->
@@ -110,15 +87,18 @@ class CertificateActivity : AppCompatActivity() {
                 Log.i(TAG, "Planification cargada en observer: ${planification?.id}")
             }
         })
-
         val extras = intent.extras
         if (extras != null) {
             // TODO obtener planificacion id de shared preferences y luego la planificacion de la BD
             if (extras.containsKey("planification")) {
                 planification = extras.getSerializable("planification") as Planification
+                Log.i(TAG, "posting value to planification")
                 viewModel.planification.postValue(planification)
                 doAsync {
                     fetchData(this@CertificateActivity::fetchPlanificationLines)
+                }
+                doAsync {
+                    fetchData(this@CertificateActivity::fetchPlanificationDeliveryLines)
                 }
             } else {
                 Log.i(TAG, "no se recibio ninguna planificacion. enviando a planificaciones")
@@ -141,24 +121,19 @@ class CertificateActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume(){
+        super.onResume()
+        mStateManager?.revalidateSessionData(this)
+    }
+
     override fun onDestroy(){
         super.onDestroy()
 
     }
 
     private fun signOut() {
-        // discard the authorization and token state, but retain the configuration and
-        // dynamic client registration (if applicable), to save from retrieving them again.
-        val currentState = mStateManager!!.current
-        val clearedState = AuthState(currentState.authorizationServiceConfiguration!!)
-        if (currentState.lastRegistrationResponse != null) {
-            clearedState.update(currentState.lastRegistrationResponse)
-        }
-        mStateManager!!.replace(clearedState)
-        val mainIntent = Intent(this, LoginActivity::class.java)
-        mainIntent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP
-        startActivity(mainIntent)
-        finish()
+        mStateManager?.signOut(this)
+        //finish()
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -168,11 +143,9 @@ class CertificateActivity : AppCompatActivity() {
 
     private fun fetchCertifiedLines(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when fetching certified lines", ex)
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban las certificaciones", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                runOnUiThread {
-                    showAlert("Error", "Sesion Expirada", this::signOut)
-                }
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -183,69 +156,45 @@ class CertificateActivity : AppCompatActivity() {
             CclDataService::class.java)
         if (dataService != null && accessToken != null) {
             try {
-                showLoader()
-                val call = dataService.getPlanificationsCertifiedLines(url,
-                    "Bearer $accessToken")
-                    .execute()
-                val response = call.body()
-                //showViews()
-                hideLoader()
-                Log.i(TAG, "Fetched certified lines: ${response?._embedded?.planificationCertifications}")
-                if (!response?._embedded?.planificationCertifications.isNullOrEmpty()) {
-                    try {
-                        db?.certificationDao()?.deleteAllByPlanification(planification?.id!!)
-                        db?.certificationDao()?.insertAll(response?._embedded?.planificationCertifications!!)
-                        Log.i(TAG, "Se guardaron ${response?._embedded?.planificationCertifications?.size} certificaciones en la BD local")
-                        Log.i(TAG, "Buscando certificaciones para la planificacion ${planification?.id} en la coleccion de pendingDeliveryLines ${viewModel.pendingDeliveryLines.value}...")
-                        val certifiedDeliveryLines = mutableListOf<DeliveryLine>()
-                        for(certified in response?._embedded?.planificationCertifications!!) {
-                            val certifiedDeliveryLine = viewModel.pendingDeliveryLines.value?.find {
-                                it.id == certified.deliveryLineId && it.deliveryId == certified.deliveryId && it.index == certified.index
-                            }
-                            if(certifiedDeliveryLine != null){
-                                Log.i(TAG, "se encontro el delivery line en la coleccion de pendientes. removiendolo de la coleccion de pendientes. ${certifiedDeliveryLine}")
-                                viewModel.pendingDeliveryLines.value?.remove(certifiedDeliveryLine)
-                                if(viewModel.certifiedDeliveryLines.value?.contains(certifiedDeliveryLine) == false) {
-                                    Log.i(TAG, "agregandolo en la collecion de certificados")
-                                    certifiedDeliveryLines.add(certifiedDeliveryLine)
-                                } else {
-                                    Log.i(TAG, "el delivery line certificado ${certifiedDeliveryLine.id} ya existe en la coleccion de certificados. No se agregara a la coleccion")
-                                }
-                            } else {
-                                Log.e(TAG, "no se encontro el delivery line certificado en la coleccion de pendientes ${certified}")
-                            }
+                doAsync {
+                    showLoader()
+                    val call = dataService.getPlanificationsCertifiedLines(url,
+                        "Bearer $accessToken")
+                        .execute()
+                    val response = call.body()
+                    //showViews()
+                    hideLoader()
+                    Log.i(TAG,
+                        "Fetched certified lines: ${response?._embedded?.planificationCertifications}")
+                    if (!response?._embedded?.planificationCertifications.isNullOrEmpty()) {
+                        try {
+                            db?.certificationDao()?.deleteAllByPlanification(planification?.id!!)
+                            db?.certificationDao()?.insertAll(response?._embedded?.planificationCertifications!!)
+                            Log.i(TAG,
+                                "Se guardaron ${response?._embedded?.planificationCertifications?.size} certificaciones en la BD local")
+                        } catch (ex: SQLiteException) {
+                            Log.e(TAG,
+                                "Error actualizando planificacion en la BD local",
+                                ex)
+                            showAlert(getString(R.string.database_error),
+                                getString(R.string.database_error_saving_planifications))
+                        } catch (ex: SQLiteConstraintException) {
+                            Log.e(TAG,
+                                "Error actualizando planificacion en la BD local",
+                                ex)
+                            showAlert(getString(R.string.database_error),
+                                getString(R.string.database_error_saving_planifications))
+                        } catch (ex: Exception) {
+                            Log.e(TAG,
+                                "Error actualizando planificacion en la BD local",
+                                ex)
+                            showAlert(getString(R.string.database_error),
+                                getString(R.string.database_error_saving_planifications))
                         }
-                        if (!certifiedDeliveryLines.isNullOrEmpty()) {
-                            Log.i(TAG, "Se encontraron ${certifiedDeliveryLines.size} delivery lines certificados en la base de datos local para la planificacion ${planification?.id}")
-                            val existingCertifications = viewModel.certifiedDeliveryLines.value
-                            Log.i(TAG, "lineas certificadas existentes antes de agregar nuevas: $existingCertifications")
-                            existingCertifications?.addAll(certifiedDeliveryLines)
-                            viewModel.certifiedDeliveryLines.postValue(existingCertifications)
-                            viewModel.pendingDeliveryLines.postValue(viewModel.pendingDeliveryLines.value)
-                        } else {
-                            Log.i(TAG, "No se encontraron delivery lines certificados en la base datos remota")
-                        }
-                    } catch (ex: SQLiteException) {
-                        Log.e(TAG,
-                            "Error actualizando planificacion en la BD local",
-                            ex)
-                        showAlert(getString(R.string.database_error),
-                                getString(R.string.database_error_saving_planifications))
-                    } catch (ex: SQLiteConstraintException) {
-                        Log.e(TAG,
-                            "Error actualizando planificacion en la BD local",
-                            ex)
-                        showAlert(getString(R.string.database_error),
-                                getString(R.string.database_error_saving_planifications))
-                    } catch (ex: Exception) {
-                        Log.e(TAG,
-                            "Error actualizando planificacion en la BD local",
-                            ex)
-                        showAlert(getString(R.string.database_error),
-                                getString(R.string.database_error_saving_planifications))
+                    } else {
+                        Log.i(TAG, "No hay lineas certificadas en la BD remota")
                     }
-                } else {
-                    Log.i(TAG, "No hay lineas certificadas en la BD remota")
+                    checkCertifications()
                 }
             } catch(toe: SocketTimeoutException) {
                 hideLoader()
@@ -258,6 +207,97 @@ class CertificateActivity : AppCompatActivity() {
             } catch (jsonEx: JSONException) {
                 hideLoader()
                 Log.e(TAG, "Failed to parse finalizing planification response", jsonEx)
+            }
+        }
+    }
+
+    fun checkCertifications(){
+        doAsync {
+            Log.i(TAG, "checking certifications and delivery lines....")
+            val pendingToUploadCertifications = db?.pendingToUploadCertificationDao()?.getAll()
+            if (!pendingToUploadCertifications.isNullOrEmpty()) {
+                Log.i(TAG, "Hay deliveryLines certificados pendientes por subir: $pendingToUploadCertifications")
+                val pendingToUploadCertifiedDeliveryLines =
+                    db?.deliveryLineDao()?.getAllByIds(pendingToUploadCertifications.map {
+                        it.deliveryLineId
+                    }.toLongArray())
+                if (!pendingToUploadCertifiedDeliveryLines.isNullOrEmpty()) {
+                    pendingToUploadCertifiedDeliveryLines.filter{deliveryLine ->
+                        // filtramos las delivery lines certificada pendientes por subir que no esten en la lista de certificaciones
+                        viewModel.certifiedDeliveryLines.value?.contains(deliveryLine) != true
+                    }.let { definitiveLines ->
+                        if (definitiveLines.isNotEmpty()) {
+                            Log.i(TAG, "delivery lines pendientes por subir que no estan en la lista de certificadas: $definitiveLines")
+                            viewModel.certifiedDeliveryLines.value?.addAll(
+                                definitiveLines)
+                            Log.i(TAG, "posting value to certifiedDeliveryLines")
+                            viewModel.certifiedDeliveryLines.postValue(viewModel.certifiedDeliveryLines.value)
+                            if (!viewModel.pendingDeliveryLines.value.isNullOrEmpty()) {
+                                Log.i(TAG, "pending delivery lines hasta ahora: ${viewModel.pendingDeliveryLines.value}")
+                                viewModel.pendingDeliveryLines.value?.removeAll(
+                                    definitiveLines)
+                                Log.i(TAG, "pending delivery lines excluidos los ya certificados: ${viewModel.pendingDeliveryLines.value}")
+                                Log.i(TAG, "posting value to pendingDeliveryLines")
+                                viewModel.pendingDeliveryLines.postValue(viewModel.pendingDeliveryLines.value)
+                            }
+                        }
+                    }
+                } else {
+                    Log.i(TAG, "No hay delivery lines que coincidan con los delivery lines certificados pendientes por subir")
+                }
+            } else {
+                Log.i(TAG, "No hay deliveryLines certificados pendientes por subir")
+            }
+            val uncertifiedDeliveryLines = db?.deliveryLineDao()?.getAllPendingByPlanification(planification?.id?.toInt()!!)
+            Log.i(TAG, "uncertifiedDeliveryLines tiene ${uncertifiedDeliveryLines?.size} elementos: $uncertifiedDeliveryLines")
+            val certifiedDeliveryLines = db?.deliveryLineDao()?.getAllCertifiedByPlanification(planification?.id?.toInt()!!)
+            Log.i(TAG, "certifiedDeliveryLines tiene ${certifiedDeliveryLines?.size} elementos: $certifiedDeliveryLines")
+            if (!certifiedDeliveryLines.isNullOrEmpty()){
+                Log.i(TAG, "delivery lines certificados hasta ahora : $certifiedDeliveryLines")
+                if (viewModel.certifiedDeliveryLines.value.isNullOrEmpty()) {
+                    Log.i(TAG, "creando lista de certified delivery lines")
+                    Log.i(TAG, "posting value to certifiedDeliveryLines")
+                    viewModel.certifiedDeliveryLines.postValue(certifiedDeliveryLines.toMutableList())
+                } else {
+                    Log.i(TAG, "agregando al final de lista de certified delivery lines")
+
+                    certifiedDeliveryLines.filter{deliveryLine ->
+                        // filtramos las delivery lines que no esten en la lista de certificaciones
+                        viewModel.certifiedDeliveryLines.value?.contains(deliveryLine) != true
+                    }.let{filteredDeliveryLines ->
+                        if (filteredDeliveryLines.isNotEmpty()){
+                            Log.i(TAG, "se agregaran ${filteredDeliveryLines.size} elementos a la lista de pendientes")
+                            viewModel.certifiedDeliveryLines.value?.addAll(filteredDeliveryLines.toMutableList())
+                            Log.i(TAG, "posting value to certifiedDeliveryLines")
+                            viewModel.certifiedDeliveryLines.postValue(viewModel.certifiedDeliveryLines.value)
+                        }
+                    }
+                }
+                if (!viewModel.pendingDeliveryLines.value.isNullOrEmpty()) {
+                    Log.i(TAG, "removiendo delivery lines ya certificados de la lista de delivery lines pendientes")
+                    viewModel.pendingDeliveryLines.value?.removeIf {
+                        certifiedDeliveryLines.contains(it)
+                    }
+                    Log.i(TAG, "delivery lines pendientes exceptuando los ya certificados: ${viewModel.pendingDeliveryLines.value}")
+                }
+            }
+            if (viewModel.pendingDeliveryLines.value.isNullOrEmpty() && !uncertifiedDeliveryLines.isNullOrEmpty()){
+                Log.i(TAG, "la lista de pendings esta vacia y hay ${uncertifiedDeliveryLines.size} delivery lines no certificados: $uncertifiedDeliveryLines")
+                Log.i(TAG, "posting value to pendingDeliveryLines")
+                viewModel.pendingDeliveryLines.postValue(uncertifiedDeliveryLines.toMutableList())
+            } else if (!viewModel.pendingDeliveryLines.value.isNullOrEmpty() && !uncertifiedDeliveryLines.isNullOrEmpty()){
+                Log.i(TAG, "la lista de pendings no esta vacia y hay ${uncertifiedDeliveryLines.size} delivery lines no certificados $uncertifiedDeliveryLines")
+                uncertifiedDeliveryLines.filter{deliveryLine ->
+                        // filtramos las delivery lines que no esten en la lista de pendientes
+                        viewModel.pendingDeliveryLines.value?.contains(deliveryLine) != true
+                    }.let{filteredDeliveryLines ->
+                    if (filteredDeliveryLines.isNotEmpty()){
+                        Log.i(TAG, "se agregaran ${filteredDeliveryLines.size} elementos a la lista de pendientes")
+                        viewModel.pendingDeliveryLines.value?.addAll(filteredDeliveryLines.toMutableList())
+                        Log.i(TAG, "posting value to pendingDeliveryLines")
+                        viewModel.pendingDeliveryLines.postValue(viewModel.pendingDeliveryLines.value)
+                    }
+                }
             }
         }
     }
@@ -284,14 +324,14 @@ class CertificateActivity : AppCompatActivity() {
         ex: AuthorizationException?,
     ) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when fetching planification lines", ex)
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban lineas de planificacion", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion finalizada",
-                        "Su sesion ha expirado, debe iniciar sesion nuevamente", this::signOut)
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
-        val url = "delivery/label/planifications"
+        //val url = "delivery/label/planifications"
+        val url = "planificationDeliveryVO1s/search/findByPlanificationId?planificationId=${planification?.id}"
         Log.i(TAG, "planification lines endpoint: ${url}")
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
@@ -302,57 +342,16 @@ class CertificateActivity : AppCompatActivity() {
             doAsync {
                 try {
                     Log.i(TAG, "fetching planification lines for planification ${planification?.id}")
-                    val call = dataService.getPlanificationLines(url, "Bearer $accessToken", arrayListOf(planification?.id!!)).execute()
-                    val planifications = call.body()
+                    val call = dataService.getPlanificationLines(url, "Bearer $accessToken").execute()
+                    val response = call.body()
                     showViews()
                     hideLoader()
-                    if (planifications != null && planifications.size > 0) {
-                        Log.i(TAG, "planificacion cargada de internet $planifications")
-                        deliveryMap = planifications[0].deliveryMap // obviamente solicitamos un solo resultado
-                        if (deliveryMap != null) {
-                            val deliveries = deliveryMap?.values?.map{
-                                it.planificationId = planification?.id
-                                it
-                            }?.toMutableList()
-                            Log.i(TAG, "deliveries de planificacion: $deliveries")
-                            val deliveryLines = mutableListOf<DeliveryLine>()
-                            viewModel.planificationLines.postValue(deliveries)
-                            var aux: DeliveryLine? = null
-                            for(delivery in deliveries!!){
-                                for (deliveryLine in delivery.detail) {
-                                    for (j in 0 until deliveryLine.quantity) {
-                                        aux = deliveryLine.copy(index = j,
-                                            deliveryId = delivery.id,
-                                            scannedOrder = j + 1,
-                                            planificationId = planification?.id!!)
-                                        deliveryLines.add(aux)
-                                    }
-                                }
-                            }
-                            viewModel.pendingDeliveryLines.postValue(deliveryLines)
-                            db?.deliveryDao()?.insertAll(deliveries)
-                            db?.deliveryLineDao()?.insertAll(deliveryLines)
-                            doAsync {
-                                fetchData(this@CertificateActivity::fetchCertifiedLines)
-                            }
-                            val foundDeliveryLines = db?.pendingToUploadCertificationDao()?.getAll()
-                            if (!foundDeliveryLines.isNullOrEmpty()) {
-                                Log.i(TAG, "Hay deliveryLines certificados pendientes por subir: $foundDeliveryLines")
-                                val _deliveryLines =
-                                    db?.deliveryLineDao()?.getAllByIds(foundDeliveryLines.map {
-                                        it.deliveryLineId.toInt()
-                                    }.toIntArray())
-                                if (!_deliveryLines.isNullOrEmpty()) {
-                                    viewModel.certifiedDeliveryLines.postValue(_deliveryLines.toMutableList())
-                                    viewModel.pendingDeliveryLines.value?.removeAll(_deliveryLines)
-                                } else {
-                                    Log.i(TAG, "No hay delivery lines que coincidan con los delivery lines certificados pendientes por subir")
-                                }
-                            } else {
-                                Log.i(TAG, "No hay deliveryLines certificados pendientes por subir")
-                            }
-                            //parsePlanificationLinesFromDeliveryMap(deliveryMap)
-                        }
+                    if (!response?._embedded?.planificationDeliveryVO1s.isNullOrEmpty()) {
+                        Log.i(TAG, "lineas cargadas de internet ${response?._embedded?.planificationDeliveryVO1s}")
+                        db?.deliveryDao()?.insertAll(response?._embedded?.planificationDeliveryVO1s!!)
+                        Log.i(TAG, "deliveries de planificacion: ${response?._embedded?.planificationDeliveryVO1s}")
+                        Log.i(TAG, "posting value to planificationLines")
+                        viewModel.planificationLines.postValue(response?._embedded?.planificationDeliveryVO1s)
                     }
                 } catch(toe: SocketTimeoutException) {
                     hideLoader()
@@ -383,8 +382,87 @@ class CertificateActivity : AppCompatActivity() {
         }
     }
 
+    private fun fetchPlanificationDeliveryLines(
+        accessToken: String?,
+        idToken: String?,
+        ex: AuthorizationException?,
+    ) {
+        if (ex != null) {
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban los delivery lines de planificacion", ex)
+            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+            }
+            return
+        }
+        //val url = "delivery/label/planifications"
+        val url = "planificationCertificationVO1s/search/findByPlanificationId?planificationId=${planification?.id}"
+        Log.i(TAG, "planification lines endpoint: ${url}")
+        val dataService: CclDataService? = CclClient.getInstance()?.create(
+            CclDataService::class.java)
+        hideViews()
+        showLoader()
+        if (dataService != null && accessToken != null) {
+            doAsync {
+                try {
+                    Log.i(TAG, "fetching delivery lines for planification ${planification?.id}")
+                    val call = dataService.getPlanificationDeliveryLines(url, "Bearer $accessToken").execute()
+                    val response = call.body()
+                    showViews()
+                    hideLoader()
+                    Log.i(TAG, "reponse delivery lines: $response")
+                    if (!response?._embedded?.planificationCertificationVO1s.isNullOrEmpty()) {
+                        val deliveryLines = mutableListOf<DeliveryLine>()
+                        response?._embedded?.planificationCertificationVO1s?.forEach { deliveryLine ->
+                            for (j in 0 until deliveryLine.quantity) {
+                                deliveryLines.add(deliveryLine.copy(index = j,
+                                    deliveryId = deliveryLine.deliveryId,
+                                    scannedOrder = j + 1,
+                                    planificationId = planification?.id!!))
+                            }
+                        }
+                        Log.i(TAG, "delivery lines cargadas de internet y parseadas $deliveryLines")
+                        if (deliveryLines.isNotEmpty()) {
+                            db?.deliveryLineDao()?.insertAll(deliveryLines)
+                            doAsync { checkCertifications()}
+                        }
+                    } else {
+                        Log.e(TAG, "la planificacion no tiene delivery lines")
+                    }
+                    fetchData(this@CertificateActivity::fetchCertifiedLines)
+                } catch(toe: SocketTimeoutException) {
+                    hideLoader()
+                    showRetryMessage("Network error fetching user planification lines",
+                        this@CertificateActivity::fetchPlanificationDeliveryLinesReq)
+                    showSnackbar("Fetching user planification lines failed")
+                    Log.e(TAG, "Network error when querying planification lines endpoint", toe)
+                } catch (ioEx: IOException) {
+                    hideLoader()
+                    showRetryMessage("Network error fetching user planification lines",
+                        this@CertificateActivity::fetchPlanificationDeliveryLinesReq)
+                    showSnackbar("Fetching user planification lines failed")
+                    Log.e(TAG, "Network error when querying planification lines endpoint", ioEx)
+                } catch (jsonEx: JSONException) {
+                    hideLoader()
+                    showRetryMessage("Error parsing user planification lines",
+                        this@CertificateActivity::fetchPlanificationDeliveryLinesReq)
+                    Log.e(TAG, "Failed to parse planification lines response", jsonEx)
+                    showSnackbar("Failed to parse planification lines")
+                } catch (e: Exception) {
+                    hideLoader()
+                    showRetryMessage("Fetching user planification lines failed",
+                        this@CertificateActivity::fetchPlanificationDeliveryLinesReq)
+                    showSnackbar("Fetching planification lines failed")
+                    Log.e(TAG, "Unknown exception: ", e)
+                }
+            }
+        }
+    }
+
     fun fetchPlanificationLinesReq() {
         fetchData(this::fetchPlanificationLines)
+    }
+    fun fetchPlanificationDeliveryLinesReq() {
+        fetchData(this::fetchPlanificationDeliveryLines)
     }
 
     private fun showRetryMessage(message: String, callback: () -> Unit) {
@@ -397,58 +475,7 @@ class CertificateActivity : AppCompatActivity() {
         }
     }
 
-    /*private fun parsePlanificationLinesFromDeliveryMap(deliveryMap: java.util.HashMap<String, PlanificationLine>?) {
-        if (deliveryMap != null) {
-            var aux: DeliveryLine
-            val deliveries: MutableList<PlanificationLine> = mutableListOf()
-            val deliveryLines: MutableList<DeliveryLine> = mutableListOf()
-            try {
-                for ((deliveryKey, delivery) in deliveryMap) {
-                    try {
-                        delivery.planificationId = planification?.id!!
-                        db?.deliveryDao()?.insert(delivery)
-                        deliveries.add(delivery)
-                    } catch (ex: SQLiteException) {
-                        Log.e(TAG, "Error saving delivery to local database", ex)
-                    } catch (ex: SQLiteConstraintException) {
-                        Log.e(TAG,
-                            "Error saving delivery to local database",
-                            ex)
-                    } catch (ex: Exception) {
-                        Log.e(TAG,
-                            "Error saving delivery to local database",
-                            ex)
-                    }
-                    for (deliveryLine in delivery.detail) {
-                        for (i in 0 until deliveryLine.quantity) {
-                            aux = deliveryLine.copy(index = i,
-                                deliveryId = delivery.id,
-                                planificationId = planification?.id!!)
-                            db?.deliveryLineDao()?.insert(aux)
-                            deliveryLines.add(aux)
-                        }
-                    }
-                }
-                //val added = db?.deliveryLineDao()?.getAllByPlanification(planification?.id!!)
-                //Log.i(TAG, "Delivery lines agregados a la BD local: $added")
-            } catch (ex: SQLiteException) {
-                Log.e(TAG, "Error saving delivery line to local database", ex)
-                showAlert("Database Error", "Error saving delivery line to local database")
-            } catch (ex: SQLiteConstraintException) {
-                Log.e(TAG,
-                    "Error saving delivery line to local database",
-                    ex)
-                showAlert("Database Error", "Error saving delivery line to local database")
-            } catch (ex: Exception) {
-                Log.e(TAG,
-                    "Error saving delivery line to local database",
-                    ex)
-                showAlert("Database Error", "Error saving delivery line to local database")
-            }
-        }
-    }*/
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+   override fun onCreateOptionsMenu(menu: Menu): Boolean {
         val inflater: MenuInflater = menuInflater
         inflater.inflate(R.menu.menu_planification, menu)
         menu.findItem(R.id.startRoute).isVisible = false
@@ -545,12 +572,9 @@ class CertificateActivity : AppCompatActivity() {
 
     private fun changePlanificationState(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
-            Log.e(TAG, "Token refresh failed when finalizing planification load", ex)
-            AuthStateManager.driverInfo = null
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban lineas de planificacion", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                runOnUiThread {
-                    showAlert("Error", "Sesion Expirada", this::signOut)
-                }
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -576,13 +600,10 @@ class CertificateActivity : AppCompatActivity() {
                     showViews()
                     routeStarted = true
                     planification?.state = newState
+                    Log.i(TAG, "posting value to planification")
                     viewModel.planification.postValue(planification)
                     try {
-                        db?.planificationDao()?.update(planification)
-                        /*val intent = Intent(this@MainActivityNational, OnRouteActivity::class.java)
-                        intent.putExtra("planification", planification)
-                        startActivity(intent)
-                        finish()*/
+                        db?.planificationDao()?.update(planification!!)
                     } catch (ex: SQLiteException) {
                         Log.e(TAG,
                             "Error actualizando planificacion en la BD local",
@@ -619,7 +640,7 @@ class CertificateActivity : AppCompatActivity() {
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching user planifications...")
         try {
-            mStateManager?.current?.performActionWithFreshTokens(mAuthService!!,
+            mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
                 callback)
         }catch (ex: AuthorizationException) {
             Log.e(TAG, "error fetching data", ex)

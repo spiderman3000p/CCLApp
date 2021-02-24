@@ -2,7 +2,6 @@ package com.tautech.cclapp.daos
 
 import androidx.room.*
 import com.tautech.cclapp.models.DeliveredItem
-import com.tautech.cclapp.models.Driver
 
 @Dao
 interface DeliveredItemDao {

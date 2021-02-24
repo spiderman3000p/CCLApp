@@ -2,7 +2,6 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/linearLayout"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@android:drawable/menuitem_background">
@@ -39,7 +38,6 @@
         app:srcCompat="@drawable/ic_camera___936_" />
 
     <ImageButton
-        android:id="@+id/button3"
         android:layout_width="20dp"
         android:layout_height="20dp"
         android:layout_marginEnd="16dp"
@@ -52,7 +50,6 @@
         app:srcCompat="@drawable/ic_view_simple___815_" />
 
     <ImageView
-        android:id="@+id/imageView"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:visibility="gone"

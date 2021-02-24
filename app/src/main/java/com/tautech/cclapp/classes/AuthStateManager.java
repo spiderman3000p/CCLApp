@@ -14,32 +14,37 @@
 
 package com.tautech.cclapp.classes;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
+import android.widget.Toast;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 
+import com.google.gson.Gson;
 import com.tautech.cclapp.activities.LoginActivity;
 import com.tautech.cclapp.models.Driver;
 import com.tautech.cclapp.models.KeycloakUser;
 
+import net.openid.appauth.AppAuthConfiguration;
 import net.openid.appauth.AuthState;
 import net.openid.appauth.AuthorizationException;
 import net.openid.appauth.AuthorizationResponse;
-import net.openid.appauth.RegistrationResponse;
+import net.openid.appauth.AuthorizationService;
+import net.openid.appauth.ClientAuthentication;
+import net.openid.appauth.TokenRequest;
 import net.openid.appauth.TokenResponse;
+
 import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
-
-import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
 
 /**
  * An example persistence mechanism for an {@link AuthState} instance.
@@ -47,7 +52,8 @@ import static android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP;
  * mutation.
  */
 public class AuthStateManager {
-
+    public AuthorizationService mAuthService;
+    public Configuration mConfiguration;
     private static final AtomicReference<WeakReference<AuthStateManager>> INSTANCE_REF =
             new AtomicReference<>(new WeakReference<>(null));
     public static KeycloakUser keycloakUser = null;
@@ -76,6 +82,15 @@ public class AuthStateManager {
         mPrefs = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE);
         mPrefsLock = new ReentrantLock();
         mCurrentAuthState = new AtomicReference<>();
+        mConfiguration = Configuration.getInstance(context);
+        if (mConfiguration.hasConfigurationChanged()) {
+            Log.e(TAG, "La configuracion de sesion ha cambiado, se cerrara su sesion");
+        }
+        mAuthService = new AuthorizationService(
+                context,
+                new AppAuthConfiguration.Builder()
+                        .setConnectionBuilder(mConfiguration.getConnectionBuilder())
+                        .build());
     }
 
     @AnyThread
@@ -118,20 +133,6 @@ public class AuthStateManager {
             @Nullable AuthorizationException ex) {
         AuthState current = getCurrent();
         current.update(response, ex);
-        return replace(current);
-    }
-
-    @AnyThread
-    @NonNull
-    public AuthState updateAfterRegistration(
-            RegistrationResponse response,
-            AuthorizationException ex) {
-        AuthState current = getCurrent();
-        if (ex != null) {
-            return current;
-        }
-
-        current.update(response);
         return replace(current);
     }
 
@@ -199,7 +200,7 @@ public class AuthStateManager {
         driverInfo = _driverInfo;
     }
 
-    public boolean signOut(Context context) {
+    public void signOut(Context context) {
         // discard the authorization and token state, but retain the configuration and
         // dynamic client registration (if applicable), to save from retrieving them again.
         AuthState currentState = this.getCurrent();
@@ -210,6 +211,68 @@ public class AuthStateManager {
             }
             this.replace(clearedState);
         }
-        return true;
+        Intent mainIntent = new Intent(context, LoginActivity.class);
+        SharedPreferences sharedPref = context.getSharedPreferences(context.getPackageName(), Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = sharedPref.edit();
+        editor.putBoolean("isLoggedIn", false);
+        editor.apply();
+        mainIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        context.startActivity(mainIntent);
+        if(context instanceof Activity){
+            ((Activity) context).finishActivity(Activity.RESULT_OK);
+        }
+    }
+
+    public void revalidateSessionData(Context context) {
+        if (keycloakUser == null || driverInfo == null) {
+            // buscamos los datos en shared prefs
+            SharedPreferences sharedPref = context.getSharedPreferences(context.getPackageName(), Context.MODE_PRIVATE);
+            if (sharedPref.contains("driverInfoJSON") && sharedPref.contains("keycloakUserJSON")) {
+                Gson gson = new Gson();
+                String _driverInfo = sharedPref.getString("driverInfoJSON", "");
+                String _keycloakUser = sharedPref.getString("keycloakUserJSON", "");
+                if (!_driverInfo.isEmpty()) {
+                    driverInfo = gson.fromJson(_driverInfo, Driver.class);
+                }
+                if (!_keycloakUser.isEmpty()) {
+                    keycloakUser = gson.fromJson(_keycloakUser, KeycloakUser.class);
+                }
+            } else {
+                Toast.makeText(context, "Some user data are wrong or empty.", Toast.LENGTH_LONG).show();
+                signOut(context);
+            }
+        }
+    }
+
+    public void performTokenRequest(TokenRequest request, AuthorizationService.TokenResponseCallback callback) {
+        ClientAuthentication clientAuthentication;
+        try {
+        clientAuthentication = this.getCurrent().getClientAuthentication();
+            mAuthService.performTokenRequest(
+                    request,
+                    clientAuthentication,
+                    callback);
+        } catch (ClientAuthentication.UnsupportedAuthenticationMethod ex) {
+            Log.d(TAG,
+                    "Token request cannot be made, client authentication for the token "
+                            + "endpoint could not be constructed (%s)",
+                    ex);
+            Log.e(TAG, "Client authentication method is unsupported");
+        }
+    }
+
+    public void refreshAccessToken() {
+        this.performTokenRequest(
+                getCurrent().createTokenRefreshRequest(), this::handleAccessTokenResponse
+        );
+    }
+
+    private void handleAccessTokenResponse(TokenResponse tokenResponse,
+            AuthorizationException authException) {
+        if (authException != null) {
+            Log.e(TAG, "Exception trying to fetch token", authException);
+        } else {
+            this.updateAfterTokenResponse(tokenResponse, authException);
+        }
     }
 }

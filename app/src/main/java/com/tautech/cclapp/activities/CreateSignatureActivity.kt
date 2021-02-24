@@ -57,7 +57,7 @@ class CreateSignatureActivity : AppCompatActivity() {
         val inflater = menuInflater
         inflater.inflate(R.menu.default_menu, menu)
         menu?.findItem(R.id.default_action)?.title = getString(R.string.clear)
-        menu?.findItem(R.id.default_action)?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        menu?.findItem(R.id.default_action)?.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         menu?.findItem(R.id.default_action)?.setIcon(ContextCompat.getDrawable(this,
             R.drawable.ic_arrow_repeat___236_))
         return true
