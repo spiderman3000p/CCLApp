@@ -9,10 +9,10 @@ interface PendingToUploadCertificationDao {
     fun getAll(): List<PendingToUploadCertification>
 
     @Query("SELECT COUNT(*) FROM pendingtouploadcertification")
-    fun count(): Int
+    fun count(): Long
 
     @Query("SELECT * FROM pendingtouploadcertification WHERE planificationId = CAST(:planificationId AS NUMERIC)")
-    fun getAllByPlanification(planificationId: Int): List<PendingToUploadCertification>
+    fun getAllByPlanification(planificationId: Long): List<PendingToUploadCertification>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(certification: PendingToUploadCertification)

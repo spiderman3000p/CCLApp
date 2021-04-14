@@ -24,7 +24,6 @@ import android.widget.Toast;
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.gson.Gson;
 import com.tautech.cclapp.activities.LoginActivity;
@@ -37,6 +36,7 @@ import net.openid.appauth.AuthorizationException;
 import net.openid.appauth.AuthorizationResponse;
 import net.openid.appauth.AuthorizationService;
 import net.openid.appauth.ClientAuthentication;
+import net.openid.appauth.EndSessionRequest;
 import net.openid.appauth.TokenRequest;
 import net.openid.appauth.TokenResponse;
 
@@ -60,9 +60,9 @@ public class AuthStateManager {
     //public static JSONObject userInfo = null;
     public static Driver driverInfo = null;
     private static final String TAG = "AuthStateManager";
-
     private static final String STORE_NAME = "AuthState";
     private static final String KEY_STATE = "state";
+    public static final int RC_END_SESSION = 1000;
 
     private final SharedPreferences mPrefs;
     private final ReentrantLock mPrefsLock;
@@ -211,16 +211,12 @@ public class AuthStateManager {
             }
             this.replace(clearedState);
         }
-        Intent mainIntent = new Intent(context, LoginActivity.class);
         SharedPreferences sharedPref = context.getSharedPreferences(context.getPackageName(), Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = sharedPref.edit();
         editor.putBoolean("isLoggedIn", false);
         editor.apply();
-        mainIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        context.startActivity(mainIntent);
-        if(context instanceof Activity){
-            ((Activity) context).finishActivity(Activity.RESULT_OK);
-        }
+        keycloakUser = null;
+        driverInfo = null;
     }
 
     public void revalidateSessionData(Context context) {

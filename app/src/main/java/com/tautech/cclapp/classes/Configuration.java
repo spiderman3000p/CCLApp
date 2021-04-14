@@ -17,9 +17,6 @@ package com.tautech.cclapp.classes;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.net.Uri;
@@ -38,7 +35,6 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -76,6 +72,7 @@ public final class Configuration {
     private Uri mAuthEndpointUri;
     private Uri mTokenEndpointUri;
     private Uri mRegistrationEndpointUri;
+    private Uri endSessionEndpoint;
     private String mUserProfileEndpointUri;
     private boolean mHttpsRequired;
 
@@ -164,6 +161,11 @@ public final class Configuration {
         return mUserProfileEndpointUri;
     }
 
+    @Nullable
+    public Uri getEndSessionEndpoint() {
+        return endSessionEndpoint;
+    }
+
     public boolean isHttpsRequired() {
         return mHttpsRequired;
     }
@@ -198,7 +200,7 @@ public final class Configuration {
         mClientId = getConfigString("client_id");
         mScope = getRequiredConfigString("authorization_scope");
         mRedirectUri = getRequiredConfigUri("redirect_uri");
-
+        endSessionEndpoint = getRequiredConfigUri("end_session_endpoint_uri");
         /*if (!isRedirectUriRegistered()) {
             throw new InvalidConfigurationException(
                     "redirect_uri is not handled by any activity in this app! "
@@ -212,6 +214,7 @@ public final class Configuration {
 
             mTokenEndpointUri = getRequiredConfigWebUri("token_endpoint_uri");
             mUserProfileEndpointUri = getRequiredConfigString("user_profile_endpoint_uri");
+            endSessionEndpoint = getRequiredConfigWebUri("end_session_endpoint_uri");
 
             if (mClientId == null) {
                 mRegistrationEndpointUri = getRequiredConfigWebUri("registration_endpoint_uri");

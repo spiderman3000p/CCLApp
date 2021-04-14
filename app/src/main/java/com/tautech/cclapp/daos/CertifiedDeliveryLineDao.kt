@@ -9,10 +9,10 @@ interface CertifiedDeliveryLineDao {
     fun getAll(): List<Certification>
 
     @Query("SELECT * FROM certification WHERE planificationId = CAST(:planificationId AS NUMERIC)")
-    fun getAllByPlanification(planificationId: Int): List<Certification>
+    fun getAllByPlanification(planificationId: Long): List<Certification>
 
     @Query("SELECT * FROM certification WHERE deliveryLineId = CAST(:deliveryLineId AS NUMERIC)")
-    fun get(deliveryLineId: Int): Certification
+    fun get(deliveryLineId: Long): Certification
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(certification: Certification)

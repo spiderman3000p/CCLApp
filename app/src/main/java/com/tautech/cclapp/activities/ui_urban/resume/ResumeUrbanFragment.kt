@@ -29,36 +29,18 @@ class ResumeUrbanFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        (activity as PlanificationDetailActivity).supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        (activity as PlanificationDetailActivity).supportActionBar?.setDisplayShowHomeEnabled(true)
+        activity?.actionBar?.setDisplayHomeAsUpEnabled(true)
+        activity?.actionBar?.setDisplayShowHomeEnabled(true)
         initCounters()
-    }
-
-    fun getTotalDeliveredDeliveryLines(): Int{
-        return viewModel.deliveries.value?.fold(0, {acc, delivery ->
-            if (delivery.deliveryState == "Delivered") {
-                acc + (delivery.totalQuantity ?: 0)
-            }else {
-                0
-            }
-        }) ?: 0
-    }
-
-    fun getTotalDeliveredDeliveries(): Int{
-        return viewModel.deliveries.value?.count{delivery ->
-            delivery.deliveryState == "Delivered"
-        } ?: 0
     }
 
     fun initCounters(){
         val totalDeliveryLines = viewModel.planification.value?.totalUnits ?: 0
         val totalDeliveries = viewModel.planification.value?.totalDeliveries ?: 0
-        val totalDeliveredDeliveries = getTotalDeliveredDeliveries()
-        val totalDeliveredDeliveryLines = getTotalDeliveredDeliveryLines()
-        deliveredDeliveriesTv?.text = totalDeliveredDeliveries.toString()
-        undeliveredDeliveriesTv?.text = (totalDeliveries - totalDeliveredDeliveries).toString()
-        deliveredDeliveryLinesTv?.text = totalDeliveredDeliveryLines.toString()
-        undeliveredDeliveryLinesTv?.text = (totalDeliveryLines - totalDeliveredDeliveryLines).toString()
+        deliveredDeliveriesTv?.text = viewModel.planification.value?.totalDelivered.toString()
+        undeliveredDeliveriesTv?.text = (totalDeliveries - (viewModel.planification.value?.totalDelivered ?: 0)).toString()
+        deliveredDeliveryLinesTv?.text = viewModel.planification.value?.totalDeliveredLines.toString()
+        undeliveredDeliveryLinesTv?.text = (totalDeliveryLines - (viewModel.planification.value?.totalDelivered ?: 0)).toString()
         totalDeliveriesTv2?.text = totalDeliveries.toString()
         totalDeliveryLinesTv2?.text = totalDeliveryLines.toString()
     }

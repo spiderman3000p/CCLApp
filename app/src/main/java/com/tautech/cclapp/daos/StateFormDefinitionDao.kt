@@ -14,13 +14,13 @@ interface StateFormDefinitionDao {
     fun getAllByState(state: String): List<StateFormDefinition>
 
     @Query("SELECT * FROM stateformdefinition WHERE deliveryState = :state AND customerId = CAST(:customerId AS NUMERIC)")
-    fun getAllByStateAndCustomer(state: String, customerId: Int): StateFormDefinition
+    fun getAllByStateAndCustomer(state: String, customerId: Long): List<StateFormDefinition>
 
     @Query("SELECT * FROM stateformdefinition WHERE id IN (:ids)")
-    fun loadAllByIds(ids: IntArray): List<StateFormDefinition>
+    fun loadAllByIds(ids: LongArray): List<StateFormDefinition>
 
     @Query("SELECT * FROM stateformfield WHERE formDefinitionId = CAST(:formDefinitionId AS NUMERIC)")
-    fun getFields(formDefinitionId: Int): List<StateFormField>
+    fun getFields(formDefinitionId: Long): List<StateFormField>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(stateFormDefinition: StateFormDefinition)
@@ -31,11 +31,17 @@ interface StateFormDefinitionDao {
     @Delete
     fun delete(stateFormDefinition: StateFormDefinition)
 
+    @Query("DELETE FROM stateformdefinition")
+    fun deleteAll()
+
+    @Query("DELETE FROM stateformdefinition WHERE customerId = CAST(:customerId AS NUMERIC)")
+    fun deleteAllByCustomer(customerId: Long)
+
     @Query("SELECT * FROM stateformdefinition WHERE id = CAST(:id AS NUMERIC)")
     fun getById(id: Long?): StateFormDefinition
 
     @Query("SELECT * FROM stateformdefinition WHERE customerId = CAST(:customerId AS NUMERIC)")
-    fun getAllByCustomer(customerId: Long?): List<StateFormField>
+    fun getAllByCustomer(customerId: Long?): List<StateFormDefinition>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(definitions: ArrayList<StateFormDefinition>)

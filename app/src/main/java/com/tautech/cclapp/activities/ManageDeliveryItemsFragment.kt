@@ -18,6 +18,7 @@ import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
 import com.tautech.cclapp.R
+import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
 import com.tautech.cclapp.adapters.DeliveryLineItemAdapter
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_delivery_items.*
@@ -28,8 +29,7 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
   private var emdkManager: EMDKManager? = null;
   private var barcodeManager: BarcodeManager? = null;
   private var scanner: Scanner? = null;
-  private var filteredData: MutableList<DeliveryLine> = mutableListOf()
-  val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
+  var filteredData: MutableList<DeliveryLine> = mutableListOf()
   val TAG = "MANAGE_DELIVERY_ITEMS_FRAGMENT"
   private var mAdapter: DeliveryLineItemAdapter? = null
   override fun onCreateView(
@@ -39,6 +39,7 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
   ): View? {
     val root = inflater.inflate(R.layout.fragment_delivery_items, container, false)
     Log.i(TAG, "onCreateView DeliveryItemsFragment")
+
     return root
   }
 
@@ -47,27 +48,16 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayHomeAsUpEnabled(true)
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayShowHomeEnabled(true)
     initAdapter()
+    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     viewModel.deliveryLines.observe(viewLifecycleOwner, Observer{deliveryLines ->
       Log.i(TAG, "delivery lines observed: $deliveryLines")
-      filteredData.clear()
-      filteredData.addAll(deliveryLines)
-      mAdapter?.notifyDataSetChanged()
-    })
-    viewModel.state.observe(viewLifecycleOwner, Observer{_state ->
-      Log.i(TAG, "delivery state observed: $_state")
-      when (_state){
-        "Delivered" -> {
-          viewModel.deliveryLines.value?.forEach { deliveryLine ->
-            deliveryLine.deliveredQuantity = deliveryLine.quantity
-          }
-        }
-        "UnDelivered" -> {
-          viewModel.deliveryLines.value?.forEach { deliveryLine ->
-            deliveryLine.deliveredQuantity = 0
-          }
+      if(!deliveryLines.isNullOrEmpty()) {
+        filteredData.clear()
+        filteredData.addAll(deliveryLines)
+        activity?.runOnUiThread {
+          mAdapter?.notifyDataSetChanged()
         }
       }
-      viewModel.delivery.postValue(viewModel.delivery.value)
     })
     searchEt4.setOnKeyListener { v, keyCode, event ->
       if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
@@ -86,7 +76,8 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
 
   fun initAdapter() {
     activity?.runOnUiThread{
-      mAdapter = DeliveryLineItemAdapter(filteredData, editable, requireContext())
+      val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
+      mAdapter = DeliveryLineItemAdapter(filteredData, editable, requireContext(), viewModel)
       itemsRv.layoutManager = LinearLayoutManager(requireContext())
       itemsRv.adapter = mAdapter
     }
@@ -240,8 +231,9 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
   fun searchData(barcode: String) {
     Log.i(TAG, "barcode readed: $barcode")
     var foundDeliveryLines: List<DeliveryLine> = listOf()
-    //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
+    //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
     if (barcode.isNotEmpty()) {
+      val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
       foundDeliveryLines = viewModel.deliveryLines.value?.filter { d ->
         d.packetType.toLowerCase().contains(barcode.toLowerCase()) ||
         d.reference.toLowerCase().contains(barcode.toLowerCase()) ||
@@ -316,7 +308,18 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
 
   override fun onDestroyView() {
     super.onDestroyView()
-    this.emdkManager?.release(EMDKManager.FEATURE_TYPE.BARCODE);
-    this.emdkManager = null;
+    this.emdkManager?.release(EMDKManager.FEATURE_TYPE.BARCODE)
+    this.emdkManager = null
+  }
+
+  companion object{
+    var mInstance: ManageDeliveryItemsFragment? = null
+    fun getInstance(): ManageDeliveryItemsFragment?{
+      if(mInstance == null){
+        Log.i("MANAGE_DELIVERY_ITEMS_FRAGMENT", "instancia de ManageDeliveryItemsFragment es null, creando una nueva")
+        mInstance = ManageDeliveryItemsFragment(true)
+      }
+      return mInstance
+    }
   }
 }

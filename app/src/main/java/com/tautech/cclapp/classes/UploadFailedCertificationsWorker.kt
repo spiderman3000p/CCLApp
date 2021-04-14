@@ -12,8 +12,6 @@ import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.PendingToUploadCertification
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.MyWorkerManagerService
-import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthorizationService
 import retrofit2.Retrofit
 
 class UploadFailedCertificationsWorker

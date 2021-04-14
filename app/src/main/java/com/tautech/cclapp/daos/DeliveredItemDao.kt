@@ -9,7 +9,7 @@ interface DeliveredItemDao {
     fun getAll(): List<DeliveredItem>
 
     @Query("SELECT * FROM delivereditem WHERE id IN (:ids)")
-    fun loadAllByIds(ids: IntArray): List<DeliveredItem>
+    fun loadAllByIds(ids: LongArray): List<DeliveredItem>
 
     @Query("SELECT * FROM delivereditem WHERE id = CAST(:id AS NUMERIC)")
     fun getById(id: Long?): DeliveredItem

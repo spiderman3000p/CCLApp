@@ -9,10 +9,10 @@ interface StateFormFieldDao {
     fun getAll(): List<StateFormField>
 
     @Query("SELECT * FROM stateformfield WHERE formDefinitionId = CAST(:stateFormDefinitionId AS NUMERIC)")
-    fun getAllByDefinition(stateFormDefinitionId: Int): List<StateFormField>
+    fun getAllByDefinition(stateFormDefinitionId: Long): List<StateFormField>
 
     @Query("SELECT * FROM stateformfield WHERE id IN (:ids)")
-    fun loadAllByIds(ids: IntArray): List<StateFormField>
+    fun loadAllByIds(ids: LongArray): List<StateFormField>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(stateFormField: StateFormField)
@@ -22,6 +22,12 @@ interface StateFormFieldDao {
 
     @Delete
     fun delete(stateFormField: StateFormField)
+
+    @Query("DELETE FROM stateformfield WHERE formDefinitionId IN (:formDefinitionIds)")
+    fun deleteAllByFormDefinition(formDefinitionIds: List<Long>)
+
+    @Query("DELETE FROM stateformfield")
+    fun deleteAll()
 
     @Query("SELECT * FROM stateformfield WHERE id = :id")
     fun getById(id: Long?): StateFormField

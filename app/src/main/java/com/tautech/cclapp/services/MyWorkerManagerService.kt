@@ -1,21 +1,14 @@
 package com.tautech.cclapp.services
 
 import android.content.Context
-import android.net.Uri
 import android.util.Log
-import androidx.core.content.FileProvider
 import androidx.work.*
-import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.UploadFailedCertificationsWorker
 import com.tautech.cclapp.classes.UploadFilesWorker
 import com.tautech.cclapp.classes.UploadSingleCertificationWorker
 import com.tautech.cclapp.models.Item
 import com.tautech.cclapp.models.PendingToUploadCertification
-import okhttp3.MultipartBody
-import org.jetbrains.anko.doAsync
 import java.io.File
-import java.io.IOException
-import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 class MyWorkerManagerService {
@@ -60,7 +53,7 @@ class MyWorkerManagerService {
                 .enqueueUniquePeriodicWork("uploadFailedCertificationsRequest", ExistingPeriodicWorkPolicy.KEEP, uploadWorkRequest)
         }
 
-        fun enqueSingleFileUpload(context: Context, item: Item, savedFormId: Int?, customerId: Long?) {
+        fun enqueSingleFileUpload(context: Context, item: Item, savedFormId: Long?, customerId: Long?) {
             Log.i(TAG, "encolando work para subir archivo ${item.name}")
             val fileTag = "uploadFormFile-${savedFormId}-${item.name}"
             filesToUpload[fileTag] = item.value as File

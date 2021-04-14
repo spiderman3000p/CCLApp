@@ -17,17 +17,14 @@ import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.Delivery
-import com.tautech.cclapp.models.PlanificationLine
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.fragment_planification_detail.*
 import kotlinx.android.synthetic.main.fragment_planification_detail.view.*
-import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthorizationException
-import net.openid.appauth.AuthorizationService
 import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
 import java.io.IOException
@@ -39,15 +36,12 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
     private var retrofitClient: Retrofit? = null
     private var mStateManager: AuthStateManager? = null
     var db: AppDatabase? = null
-    var totalDeliveriesDelivered = 0
-    var totalDeliveryLinesDelivered = 0
     override fun onCreateView(
             inflater: LayoutInflater,
             container: ViewGroup?,
             savedInstanceState: Bundle?
     ): View? {
         val root = inflater.inflate(R.layout.fragment_planification_detail, container, false)
-        var deliveredDeliveries: List<Delivery> = listOf()
         retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(requireContext())
         val config = Configuration.getInstance(requireContext())
@@ -67,12 +61,10 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
             showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
         }
         viewModel.deliveries.observe(viewLifecycleOwner, Observer{ deliveries ->
-            deliveredDeliveries = deliveries.filter {
-                it.deliveryState == "Delivered"
-            }
-            calculateTotals(deliveredDeliveries)
+            refreshTotals()
         })
         viewModel.planification.observe(viewLifecycleOwner, Observer{planification ->
+            val utilities = CclUtilities.getInstance()
             root.planificationStateChip.text = planification.state
             root.planificationStateChip.chipBackgroundColor = when(planification.state) {
                 "Created" -> ContextCompat.getColorStateList(requireContext(), R.color.created_bg)
@@ -83,8 +75,8 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
                 else -> ContextCompat.getColorStateList(requireContext(), R.color.created_bg)
             }
             root.dateTv.text = planification.dispatchDate
-            root.planificationTypeTv.text = planification.planificationType
-            root.planificationLabelTv.text = planification.label.let {
+            root.planificationTypeTv?.text = planification.planificationType
+            root.planificationLabelTv?.text = planification.label.let {
                 if (it.isNullOrEmpty()) {
                     getString(R.string.no_label_planification)
                 } else {
@@ -93,11 +85,11 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
             }
             /*root.planificationCustomerTv.text = planification.customerName
             root.planificationDriverTv.text = planification.driverName*/
-            root.planificationDriverTv.visibility = View.GONE
-            root.planificationCustomerTv.visibility = View.GONE
-            root.planificationVehicleTv.text = planification.licensePlate
-            root.totalWeightChip.text = "%.2f".format(planification.totalWeight ?: 0) + " kg"
-            root.totalValueChip.text = "%.2f".format(planification.totalValue ?: 0) + " $"
+            root.planificationDriverTv?.visibility = View.GONE
+            root.planificationCustomerTv?.visibility = View.GONE
+            root.planificationVehicleTv?.text = planification.licensePlate
+            root.totalWeightChip?.text = utilities.formatQuantity(planification.totalWeight ?: 0.0) + " kg"
+            root.totalValueChip?.text = utilities.formatQuantity(planification.totalValue ?: 0.0) + " $"
             refreshTotals()
         })
         return root
@@ -110,33 +102,29 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
     }
 
     fun getCompletedDeliveryLinesProgress(): Int {
-        return (totalDeliveryLinesDelivered * 100) / (viewModel.planification.value?.totalUnits ?: 1)
+        return ((viewModel.planification.value?.totalDeliveredLines ?: 0) * 100) / (viewModel.planification.value?.totalUnits ?: 1)
     }
 
     fun getCompletedDeliveriesProgress(): Int {
-        return (totalDeliveriesDelivered * 100) / (viewModel.planification.value?.totalDeliveries ?: 1)
+        return ((viewModel.planification.value?.totalDelivered ?: 0) * 100) / (viewModel.planification.value?.totalDeliveries ?: 1)
     }
 
-    fun calculateTotals(deliveredDeliveries: List<Delivery> ){
-        totalDeliveriesDelivered = deliveredDeliveries.size
-        totalDeliveryLinesDelivered = 0
-        deliveredDeliveries.forEach {
-            if (it.deliveryState == "Delivered"){
-                totalDeliveryLinesDelivered += it.totalQuantity ?: 0
-            }
+    private fun refreshTotals(){
+        activity?.runOnUiThread {
+            planificationCompletedProgressTv?.text =
+                "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
+            planificationCompletedProgressBar?.progress = getCompletedDeliveryLinesProgress()
+            totalItemsChip?.text =
+                "${viewModel.planification.value?.totalDelivered}/${viewModel.planification.value?.totalDeliveries ?: 0}"
+            deliveriesCompletedProgressTv?.text =
+                "${getCompletedDeliveriesProgress()}% ${getString(R.string.completed)}"
+            deliveriesCompletedProgressBar?.progress = getCompletedDeliveriesProgress()
+            deliveryLinesCountChip.text =
+                "${viewModel.planification.value?.totalDeliveredLines}/${viewModel.planification.value?.totalUnits ?: 0}"
+            deliveryLinesCompletedProgressTv?.text =
+                "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
+            deliveryLinesCompletedProgressBar?.progress = getCompletedDeliveryLinesProgress()
         }
-        refreshTotals()
-    }
-
-    fun refreshTotals(){
-        planificationCompletedProgressTv.text = "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
-        planificationCompletedProgressBar.progress = getCompletedDeliveryLinesProgress()
-        totalItemsChip.text = "${totalDeliveriesDelivered}/${viewModel.planification.value?.totalDeliveries ?: 0}"
-        deliveriesCompletedProgressTv.text = "${getCompletedDeliveriesProgress()}% ${getString(R.string.completed)}"
-        deliveriesCompletedProgressBar.progress = getCompletedDeliveriesProgress()
-        deliveryLinesCountChip.text = "${totalDeliveryLinesDelivered}/${viewModel.planification.value?.totalUnits ?: 0}"
-        deliveryLinesCompletedProgressTv.text = "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
-        deliveryLinesCompletedProgressBar.progress = getCompletedDeliveryLinesProgress()
     }
 
     override fun onRefresh() {
@@ -155,10 +143,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
             }
             return
         }
-        //https://{{hostname}}/stateFormDefinitions/search/findByCustomerId?customerId=2
-        //val url = "stateFormDefinitions/search/findByCustomerId?customerId==${viewModel.planification.value?.customerId}"
         val url = "api/customers/stateConfing?customer-id=${viewModel.planification.value?.customerId}"
-        //Log.i(TAG_PLANIFICATIONS, "constructed user endpoint: $userInfoEndpoint")
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
         if (dataService != null && accessToken != null) {
@@ -172,13 +157,18 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
                     if (!response.isNullOrEmpty()) {
                         try {
                             Log.i(TAG, "guardando en DB local definiciones")
+                            if(viewModel.planification.value?.customerId != null) {
+                                db?.stateFormDefinitionDao()
+                                    ?.deleteAllByCustomer(viewModel.planification.value?.customerId!!)
+                            }
                             db?.stateFormDefinitionDao()?.insertAll(response)
                             response.flatMap{def ->
                                 def.formFieldList?.forEach {field ->
-                                    field.formDefinitionId = def.id?.toInt()
+                                    field.formDefinitionId = def.id
                                 }
                                 def.formFieldList ?: listOf()
                             }.also{fields ->
+                                db?.stateFormFieldDao()?.deleteAll()
                                 if (fields.isNotEmpty()) {
                                     db?.stateFormFieldDao()?.insertAll(fields)
                                 }
@@ -218,17 +208,11 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
 
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching data...$callback")
-        try {
-            mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
-                callback)
-        }catch (ex: AuthorizationException) {
-            Log.e(TAG, "error fetching data", ex)
-        }
+        mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!, callback)
     }
 
     private fun signOut() {
         mStateManager?.signOut(requireContext())
-        //activity?.finish()
     }
 
     fun showAlert(title: String, message: String) {

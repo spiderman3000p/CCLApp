@@ -76,6 +76,13 @@ interface CclDataService {
         @Header("Authorization") authorization: String
     ): Call<ArrayList<StateFormDefinition>>
 
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getCustomer(
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<Customer>
+
     @POST
     @Headers("Content-Type: application/json")
     fun savePlanificationStateForm(
@@ -83,7 +90,7 @@ interface CclDataService {
         @Body stateForm: StateForm,
         @Header("customer-id") customerId: Long?,
         @Header("Authorization") authorization: String
-        ): Call<Int>
+        ): Call<Long>
 
     @POST
     @Multipart
@@ -99,8 +106,30 @@ interface CclDataService {
     @POST
     @Headers("Content-Type: application/json")
     fun saveDeliveredItems(
-        @Url url: String,
         @Body deliveredItems: List<DeliveredItemToUpload>?,
-        @Header("Authorization") authorization: String
+        @Header("Authorization") authorization: String,
+        @Url url: String = "delivery/addDeliveredItems"
+    ): Call<Void>
+
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getDeliveredItems(
+        @Query(value = "") deliveryId: Long,
+        @Header("Authorization") authorization: String,
+        @Url url: String = "delivery/deliveredItems"
+    ): Call<Void>
+
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getPaymentMethods(
+        @Header("Authorization") authorization: String,
+        @Url url: String = "paymentMethods"): Call<PaymentMethodsResponse>
+
+    @POST
+    @Headers("Content-Type: application/json")
+    fun saveDeliveryPaymentDetails(
+        @Body paymentDetails: DeliveryPaymentDetail,
+        @Header("Authorization") authorization: String,
+        @Url url: String = "paymentDetails"
     ): Call<Void>
 }

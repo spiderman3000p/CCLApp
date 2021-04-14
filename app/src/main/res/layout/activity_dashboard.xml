@@ -50,13 +50,13 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginBottom="40dp"
-        android:divider="?attr/dividerVertical"
+        android:background="#74000000"
+        android:divider="@android:drawable/divider_horizontal_textfield"
         android:orientation="vertical"
         android:showDividers="middle"
         android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5"
         app:layout_constraintStart_toStartOf="parent">
 
         <TextView
@@ -64,7 +64,7 @@
             android:layout_width="match_parent"
             android:layout_height="220dp"
             android:layout_weight="0.3"
-            android:background="#74000000"
+            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:contextClickable="true"
             android:drawableTop="@drawable/ic__36_delivery_9"
@@ -83,7 +83,7 @@
             android:layout_width="match_parent"
             android:layout_height="220dp"
             android:layout_weight="0.3"
-            android:background="#74000000"
+            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:contextClickable="true"
             android:drawableTop="@drawable/ic__37_delivery_10"

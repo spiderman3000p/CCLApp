@@ -4,6 +4,7 @@
   "authorization_scope": "openid email profile",
   "discovery_uri": "",
   "authorization_endpoint_uri": "https://keycloak.cclauth.com/auth/realms/cclrealm/protocol/openid-connect/auth",
+  "end_session_endpoint_uri": "https://keycloak.cclauth.com/auth/realms/cclrealm/protocol/openid-connect/logout",
   "token_endpoint_uri": "https://keycloak.cclauth.com/auth/realms/cclrealm/protocol/openid-connect/token",
   "registration_endpoint_uri": "",
   "user_info_endpoint_uri": "protocol/openid-connect/userinfo",

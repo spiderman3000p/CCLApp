@@ -1,6 +1,7 @@
 package com.tautech.cclapp.activities
 
 import android.content.DialogInterface
+import android.content.Intent
 import android.database.sqlite.*
 import android.os.Bundle
 import android.util.Log
@@ -8,6 +9,8 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -21,14 +24,18 @@ import com.google.android.material.snackbar.Snackbar
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
+import com.tautech.cclapp.classes.PreviewPlanificationDialog
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
+import com.tautech.cclapp.models.Delivery
 import com.tautech.cclapp.models.Planification
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.activity_planification_detail.*
-import net.openid.appauth.AppAuthConfiguration
+import kotlinx.android.synthetic.main.fragment_planification_preview.*
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
+import net.openid.appauth.EndSessionRequest
+import net.openid.appauth.EndSessionResponse
 import org.jetbrains.anko.contentView
 import org.jetbrains.anko.doAsync
 import org.json.JSONException
@@ -86,12 +93,24 @@ class PlanificationDetailActivity : AppCompatActivity() {
                 invalidateOptionsMenu()
                 if (!loadingData) {
                     loadingData = true
-                    doAsync{
-                        fetchPlanificationDataReq()
+                    if (viewModel.deliveries.value.isNullOrEmpty()) {
+                        doAsync {
+                            fetchPlanificationDataReq()
+                        }
+                    } else {
+                        doAsync {
+                            loadDeliveriesFromLocal()
+                        }
                     }
                 }
-                doAsync{
-                    loadStateFormDefinitions()
+                if (viewModel.stateFormDefinitions.value.isNullOrEmpty()) {
+                    doAsync {
+                        fetchData(this@PlanificationDetailActivity::loadStateFormDefinitions)
+                    }
+                } else {
+                    doAsync {
+                        loadStateFormDefinitionsFromLocal()
+                    }
                 }
             }
         })
@@ -142,8 +161,58 @@ class PlanificationDetailActivity : AppCompatActivity() {
     }
 
     private fun signOut() {
-        mStateManager?.signOut(this)
-        //finish()
+        if (mStateManager != null && mStateManager?.current != null && mStateManager?.mConfiguration?.redirectUri != null &&
+            mStateManager?.current?.idToken != null && mStateManager?.current?.authorizationServiceConfiguration != null) {
+            val endSessionRequest = EndSessionRequest.Builder(
+                mStateManager?.current?.authorizationServiceConfiguration!!,
+                mStateManager?.current?.idToken!!,
+                mStateManager?.mConfiguration?.redirectUri!!
+            ).build()
+            if (endSessionRequest != null) {
+                val authService = AuthorizationService(this)
+                val endSessionIntent = authService.getEndSessionRequestIntent(endSessionRequest)
+                startActivityForResult(endSessionIntent, AuthStateManager.RC_END_SESSION)
+            } else {
+                showSnackbar("Error al intentar cerrar sesion")
+            }
+        } else {
+            Log.i(TAG,
+                "mStateManager?.mConfiguration?.redirectUri: ${mStateManager?.mConfiguration?.redirectUri}")
+            Log.i(TAG, "mStateManager?.current?.idToken: ${mStateManager?.current?.idToken}")
+            Log.i(TAG,
+                "mStateManager?.current?.authorizationServiceConfiguration: ${mStateManager?.current?.authorizationServiceConfiguration}")
+            showSnackbar("Error al intentar cerrar sesion")
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == AuthStateManager.RC_END_SESSION) {
+            val resp: EndSessionResponse = EndSessionResponse.fromIntent(data!!)!!
+            val ex = AuthorizationException.fromIntent(data)
+            Log.i(TAG, "logout response: $resp")
+            if (resp != null) {
+                if (ex != null) {
+                    Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                    showAlert("Error",
+                        "No se pudo finalizar la sesion",
+                        this::signOut)
+                } else {
+                    mStateManager?.signOut(this)
+                    val mainIntent = Intent(this,
+                        LoginActivity::class.java)
+                    mainIntent.flags =
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(mainIntent)
+                    finishAndRemoveTask()
+                }
+            } else {
+                Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                showAlert("Error",
+                    "No se pudo finalizar la sesion remota",
+                    this::signOut)
+            }
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -167,12 +236,6 @@ class PlanificationDetailActivity : AppCompatActivity() {
         }
     }
 
-    fun loadStateFormDefinitions() {
-        if (viewModel.stateFormDefinitions.value == null || viewModel.stateFormDefinitions.value?.isNullOrEmpty() == true) {
-            fetchData(this::loadStateFormDefinitions)
-        }
-    }
-
     private fun loadStateFormDefinitions(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban las definiciones de formularios", ex)
@@ -181,11 +244,7 @@ class PlanificationDetailActivity : AppCompatActivity() {
             }
             return
         }
-        //https://{{hostname}}/stateFormDefinitions/search/findByCustomerId?customerId=2
-        //val url = "stateFormDefinitions/search/findByCustomerId?customerId=${planification?.customerId}"
-        //api/customers/stateConfing?customer-id=${planification?.customerId}
         val url = "api/customers/stateConfing?customer-id=${planification?.customerId}"
-        //Log.i(TAG_PLANIFICATIONS, "constructed user endpoint: $userInfoEndpoint")
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
         if (dataService != null && accessToken != null) {
@@ -200,13 +259,18 @@ class PlanificationDetailActivity : AppCompatActivity() {
                         try {
                             viewModel.stateFormDefinitions.postValue(response.toMutableList())
                             Log.i(TAG, "guardando en DB local definiciones")
+                            if(viewModel.planification.value?.customerId != null) {
+                                db?.stateFormDefinitionDao()
+                                    ?.deleteAllByCustomer(viewModel.planification.value?.customerId!!)
+                            }
                             db?.stateFormDefinitionDao()?.insertAll(response)
                             val allFields = response.flatMap{def ->
                                 def.formFieldList?.forEach{field ->
-                                    field.formDefinitionId = def.id?.toInt()
+                                    field.formDefinitionId = def.id
                                 }
                                 def.formFieldList ?: listOf()
                             }
+                            db?.stateFormFieldDao()?.deleteAll()
                             if (allFields.isNotEmpty()) {
                                 Log.i(TAG, "all form fields: $allFields")
                                 db?.stateFormFieldDao()?.insertAll(allFields)
@@ -244,6 +308,43 @@ class PlanificationDetailActivity : AppCompatActivity() {
         }
     }
 
+    private fun loadDeliveriesFromLocal(){
+        loadingData = true
+        showLoader()
+        hideViews()
+        doAsync {
+            try {
+                Log.i(TAG, "fetching planification ${planification?.id} deliveries from local DB")
+                val deliveries = db?.deliveryDao()?.getAllByPlanification(planification?.id!!)
+                if (!deliveries.isNullOrEmpty()) {
+                    Log.i(TAG, "deliveries cargadas de BD local $deliveries")
+                    viewModel.deliveries.postValue(deliveries.toMutableList())
+                }
+            } catch(ex: Exception) {
+                Log.e(TAG, "Excepcion al cargar deliveries de la BD local", ex)
+            } finally {
+                loadingData = false
+                hideLoader()
+                showViews()
+            }
+        }
+    }
+
+    private fun loadStateFormDefinitionsFromLocal(){
+        doAsync {
+            try {
+                Log.i(TAG, "fetching state form defs from local DB")
+                val definitions = db?.stateFormDefinitionDao()?.getAllByCustomer(planification?.customerId)
+                if (!definitions.isNullOrEmpty()) {
+                    Log.i(TAG, "definitions cargadas de BD local $definitions")
+                    viewModel.stateFormDefinitions.postValue(definitions.toMutableList())
+                }
+            } catch(ex: Exception) {
+                Log.e(TAG, "Excepcion al cargar definitions de la BD local", ex)
+            }
+        }
+    }
+
     private fun fetchPlanificationData(
         accessToken: String?,
         idToken: String?,
@@ -258,7 +359,6 @@ class PlanificationDetailActivity : AppCompatActivity() {
         }
         hideViews()
         showLoader()
-        //val url = "delivery/label/planifications"
         val url = "planificationDeliveryVO1s/search/findByPlanificationId?planificationId=${planification?.id}"
         Log.i(TAG, "planification data endpoint: ${url}")
         val dataService: CclDataService? = CclClient.getInstance()?.create(
@@ -269,8 +369,6 @@ class PlanificationDetailActivity : AppCompatActivity() {
                     Log.i(TAG, "fetching planification ${planification?.id} deliveries")
                     val call = dataService.getPlanificationLines(url, "Bearer $accessToken").execute()
                     val response = call.body()
-                    loadingData = false
-                    hideLoader()
                     showViews()
                     if (response != null && response._embedded.planificationDeliveryVO1s.isNotEmpty()) {
                         Log.i(TAG, "deliveries cargadas de internet ${response._embedded.planificationDeliveryVO1s}")
@@ -278,29 +376,28 @@ class PlanificationDetailActivity : AppCompatActivity() {
                         db?.deliveryDao()?.insertAll(response._embedded.planificationDeliveryVO1s)
                     }
                 } catch(toe: SocketTimeoutException) {
-                    hideLoader()
                     showRetryMessage("Network error fetching user planification data",
                         this@PlanificationDetailActivity::fetchPlanificationDataReq)
                     showSnackbar("Fetching user planification data failed")
                     Log.e(TAG, "Network error when querying planification data endpoint", toe)
                 } catch (ioEx: IOException) {
-                    hideLoader()
                     showRetryMessage("Network error fetching user planification data",
                         this@PlanificationDetailActivity::fetchPlanificationDataReq)
                     showSnackbar("Fetching user planification data failed")
                     Log.e(TAG, "Network error when querying planification data endpoint", ioEx)
                 } catch (jsonEx: JSONException) {
-                    hideLoader()
                     showRetryMessage("Error parsing user planification data",
                         this@PlanificationDetailActivity::fetchPlanificationDataReq)
                     Log.e(TAG, "Failed to parse planification data response", jsonEx)
                     showSnackbar("Failed to parse planification data")
                 } catch (e: Exception) {
-                    hideLoader()
                     showRetryMessage("Fetching user planification data failed",
                         this@PlanificationDetailActivity::fetchPlanificationDataReq)
                     showSnackbar("Fetching planification data failed")
                     Log.e(TAG, "Unknown exception: ", e)
+                } finally {
+                    loadingData = false
+                    hideLoader()
                 }
             }
         }
@@ -337,7 +434,6 @@ class PlanificationDetailActivity : AppCompatActivity() {
         inflater.inflate(R.menu.menu_planification, menu)
         menu.findItem(R.id.startRoute).isVisible = false
         menu.findItem(R.id.endRoute).isVisible = false
-        menu.findItem(R.id.cancelRoute).isVisible = false
         return true
     }
 
@@ -352,10 +448,6 @@ class PlanificationDetailActivity : AppCompatActivity() {
                 askForChangeState("Complete")
                 true
             }
-            R.id.cancelRoute -> {
-                askForChangeState("Cancelled")
-                true
-            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -363,27 +455,22 @@ class PlanificationDetailActivity : AppCompatActivity() {
     override fun onPrepareOptionsMenu(menu: Menu?): Boolean {
         when(planification?.state) {
             "Created" -> {
-                menu?.findItem(R.id.cancelRoute)?.isVisible = false
                 menu?.findItem(R.id.startRoute)?.isVisible = false
                 menu?.findItem(R.id.endRoute)?.isVisible = false
             }
             "Dispatched" -> {
-                menu?.findItem(R.id.cancelRoute)?.isVisible = true
                 menu?.findItem(R.id.startRoute)?.isVisible = true
                 menu?.findItem(R.id.endRoute)?.isVisible = false
             }
             "OnGoing" -> {
-                menu?.findItem(R.id.cancelRoute)?.isVisible = false
                 menu?.findItem(R.id.startRoute)?.isVisible = false
                 menu?.findItem(R.id.endRoute)?.isVisible = true
             }
             "Cancelled" -> {
-                menu?.findItem(R.id.cancelRoute)?.isVisible = false
                 menu?.findItem(R.id.startRoute)?.isVisible = false
                 menu?.findItem(R.id.endRoute)?.isVisible = false
             }
             "Complete" -> {
-                menu?.findItem(R.id.cancelRoute)?.isVisible = false
                 menu?.findItem(R.id.startRoute)?.isVisible = false
                 menu?.findItem(R.id.endRoute)?.isVisible = false
             }
@@ -401,9 +488,25 @@ class PlanificationDetailActivity : AppCompatActivity() {
                 showAlert(getString(R.string.start_route), getString(R.string.start_route_prompt), this::changePlanificationState)
             }
             "Complete" -> {
-                showAlert(getString(R.string.complete_route), getString(R.string.complete_route_prompt), this::changePlanificationState)
+                showAlert(getString(R.string.complete_route), getString(R.string.complete_route_prompt), this::showFinalizationPreview)
             }
         }
+    }
+
+    fun showFinalizationPreview(){
+        //TODO: aqui hay que llamar a esta funcion this::changePlanificationState
+        Log.i(TAG, "deliveries al hacer preview: ${viewModel.deliveries.value?.size}")
+        val objectC = PreviewPlanificationDialog.Totals()
+        objectC.totalPlanificationValue = planification?.totalValue ?: 0.0
+        viewModel.deliveries.value?.forEach {
+            if(it.deliveryState == "Delivered") {
+                objectC.totalDelivered += objectC.totalDelivered + (it.totalValue ?: 0.0)
+            } else {
+                objectC.totalUndelivered += objectC.totalUndelivered + (it.totalValue ?: 0.0)
+                objectC.undeliveredDeliveries.add(it)
+            }
+        }
+        PreviewPlanificationDialog.display(supportFragmentManager, objectC, this::changePlanificationState)
     }
 
     fun changePlanificationState() {
@@ -428,34 +531,27 @@ class PlanificationDetailActivity : AppCompatActivity() {
         if (dataService != null && accessToken != null) {
             doAsync {
                 try {
-                    /*val call = dataService.finalizePlanificationLoad(url,
-                        "Bearer $accessToken")
-                        .execute()*/
                     val call = dataService.changePlanificationState(url,
                         "Bearer $accessToken")
                         .execute()
                     val response = call.body()
                     Log.i(TAG, "respuesta al cambiar estado de planificacion ${planification?.id}: ${response}")
-                    hideLoader()
                     showViews()
                     planification?.state = newState
                     viewModel.planification.postValue(planification)
                     try {
                         db?.planificationDao()?.update(planification!!)
                     } catch (ex: SQLiteException) {
-                        hideLoader()
                         Log.e(TAG,
                             "Error actualizando planificacion en la BD local",
                             ex)
                         showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                     } catch (ex: SQLiteConstraintException) {
-                        hideLoader()
                         Log.e(TAG,
                             "Error actualizando planificacion en la BD local",
                             ex)
                         showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                     } catch (ex: Exception) {
-                        hideLoader()
                         Log.e(TAG,
                             "Error actualizando planificacion en la BD local",
                             ex)
@@ -463,19 +559,18 @@ class PlanificationDetailActivity : AppCompatActivity() {
                     }
                     Log.i(TAG, "finalize planification load response $response")
                 } catch(toe: SocketTimeoutException) {
-                    hideLoader()
                     Log.e(TAG, "Network error when finalizing planification load", toe)
                     showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
-                    hideLoader()
                     Log.e(TAG,
                         "Network error when finalizing planification load",
                         ioEx)
                     showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (jsonEx: JSONException) {
-                    hideLoader()
                     Log.e(TAG, "Failed to parse finalizing planification response", jsonEx)
                     showAlert(getString(R.string.parsing_error_title), getString(R.string.parsing_error))
+                } finally {
+                    hideLoader()
                 }
             }
         }
@@ -483,33 +578,30 @@ class PlanificationDetailActivity : AppCompatActivity() {
 
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "oning data...$callback")
-        try {
-            mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!,
-                callback)
-        }catch (ex: AuthorizationException) {
-            Log.e(TAG, "error fetching data", ex)
-        }
+        mStateManager?.current?.performActionWithFreshTokens(mStateManager?.mAuthService!!, callback)
     }
 
     fun showAlert(title: String, message: String, positiveCallback: (() -> Unit)? = null, negativeCallback: (() -> Unit)? = null) {
-        val builder = AlertDialog.Builder(this)
-        builder.setTitle(title)
-        builder.setMessage(message)
-        builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener{dialog, id ->
-            if (positiveCallback != null) {
-                positiveCallback()
+        runOnUiThread {
+            val builder = AlertDialog.Builder(this)
+            builder.setTitle(title)
+            builder.setMessage(message)
+            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { dialog, id ->
+                if (positiveCallback != null) {
+                    positiveCallback()
+                }
+                dialog.dismiss()
+            })
+            builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener { dialog, id ->
+                if (negativeCallback != null) {
+                    negativeCallback()
+                }
+                dialog.dismiss()
+            })
+            if (!this.isDestroyed && !this.isFinishing) {
+                val dialog: AlertDialog = builder.create()
+                dialog.show()
             }
-            dialog.dismiss()
-        })
-        builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener{dialog, id ->
-            if (negativeCallback != null) {
-                negativeCallback()
-            }
-            dialog.dismiss()
-        })
-        if(!this.isDestroyed && !this.isFinishing) {
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
         }
     }
 

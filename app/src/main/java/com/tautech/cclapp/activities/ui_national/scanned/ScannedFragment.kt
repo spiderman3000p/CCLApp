@@ -7,7 +7,6 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -24,7 +23,6 @@ import com.tautech.cclapp.adapters.DeliveryLineAdapter
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_scanned.*
-import org.jetbrains.anko.doAsync
 
 class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     // Variables to hold EMDK related objects
@@ -47,7 +45,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         viewModel.certifiedDeliveryLines.observe(viewLifecycleOwner, Observer{certifiedDeliveryLines ->
             Log.i(TAG, "certified delivery lines observed: $certifiedDeliveryLines")
             filteredData.clear()
-            filteredData = certifiedDeliveryLines
+            filteredData.addAll(certifiedDeliveryLines)
             mAdapter?.notifyDataSetChanged()
         })
         return root
@@ -58,12 +56,12 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         (activity as CertificateActivity).supportActionBar?.setDisplayHomeAsUpEnabled(true)
         (activity as CertificateActivity).supportActionBar?.setDisplayShowHomeEnabled(true)
         Log.i(TAG, "on view created")
-        mAdapter = DeliveryLineAdapter(viewModel.certifiedDeliveryLines.value!!, this.requireContext())
+        mAdapter = DeliveryLineAdapter(filteredData, this.requireContext())
         certifiedDeliveryLinesRv.layoutManager = LinearLayoutManager(this.requireContext())
         certifiedDeliveryLinesRv.adapter = mAdapter
         searchEt4.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
-                if (searchEt4.text.length > 0) {
+                if (searchEt4.text.isNotEmpty()) {
                     searchData(searchEt4.text.toString())
                 }
             }
@@ -79,12 +77,13 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
             val results = EMDKManager.getEMDKManager(this.requireContext(), this)
             // Check the return status of getEMDKManager() and update the status TextView accordingly.
             if (results.statusCode != EMDKResults.STATUS_CODE.SUCCESS) {
-                //updateStatus("Barcode request failed!")
+                updateStatus("Barcode request failed!")
             } else {
-                //updateStatus("Barcode reader initialization is in progress...")
+                updateStatus("Barcode reader initialization is in progress...")
             }
         }catch (e: Exception) {
             //updateStatus("Error loading EMDK Manager")
+            Log.e(TAG, "Error loading EMDK Manager")
         }
     }
 
@@ -93,7 +92,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         barcodeManager = emdkManager?.getInstance(EMDKManager.FEATURE_TYPE.BARCODE) as BarcodeManager
         // Add external scanner connection listener.
         if (barcodeManager == null) {
-            Toast.makeText(this.context, "Barcode scanning is not supported.", Toast.LENGTH_LONG).show()
+            showSnackbar("Barcode scanning is not supported")
         }
     }
 
@@ -120,7 +119,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                     deInitScanner()
                 }
             } else {
-                //updateStatus("Failed to initialize the scanner device.")
+                updateStatus("Failed to initialize the scanner device.")
             }
         }
     }
@@ -162,7 +161,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         when (state) {
             StatusData.ScannerStates.IDLE -> {
                 // Scanner is idle and ready to change configuration and submit read.
-                statusStr = statusData?.friendlyName + " is   enabled and idle..."
+                //statusStr = statusData?.friendlyName + " is   enabled and idle..."
                 // Change scanner configuration. This should be done while the scanner is in IDLE state.
                 setConfig()
                 try {
@@ -170,24 +169,25 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                     //but puts it in a  state in which the scanner can be turned on automatically or by pressing a hardware trigger.
                     scanner?.read()
                 } catch (e: ScannerException) {
-                    updateStatus(e.message);
+                    Log.e(TAG, "Ocurrio un error con el escaner", e)
+                    updateStatus("Ocurrio un error con el escaner")
                 }
             }
             StatusData.ScannerStates.WAITING -> {
                 // Scanner is waiting for trigger press to scan...
-                statusStr = "Scanner is waiting for trigger press..."
+                //statusStr = "Scanner is waiting for trigger press..."
             }
             StatusData.ScannerStates.SCANNING -> {
                 // Scanning is in progress...
-                statusStr = "Scanning..."
+                //statusStr = "Scanning..."
             }
             StatusData.ScannerStates.DISABLED -> {
                 // Scanner is disabled
-                statusStr = statusData?.friendlyName + " is disabled."
+                //statusStr = statusData?.friendlyName + " is disabled."
             }
             StatusData.ScannerStates.ERROR -> {
                 // Error has occurred during scanning
-                statusStr = "An error has occurred."
+                statusStr = "Occurrio un error durante el escaneo"
             }
         }
         // Updates TextView with scanner state on UI thread.
@@ -196,8 +196,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
 
     override fun onData(scanDataCollection: ScanDataCollection?) {
         // The ScanDataCollection object gives scanning result and the collection of ScanData. Check the data and its status.
-        var dataStr: String = ""
-        var barcodeData: String
+        var barcodeData: String = ""
         if ((scanDataCollection != null) && (scanDataCollection.result == ScannerResults.SUCCESS)) {
             val scanData: ArrayList<ScanDataCollection.ScanData> =  scanDataCollection.scanData;
             // Iterate through scanned data and prepare the data.
@@ -205,15 +204,9 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                 // Get the scanned dataString
                 barcodeData =  data.data;
                 Log.i("DATA_LOADED", barcodeData);
-                // Get the type of label being scanned
-                val labelType: ScanDataCollection.LabelType = data.labelType;
-                // Concatenate barcode data and label type
-                dataStr = "$barcodeData  $labelType";
             }
             // Updates EditText with scanned data and type of label on UI thread.
-            doAsync {
-                searchData(dataStr)
-            }
+            searchData(barcodeData)
         }
     }
 
@@ -250,23 +243,13 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         Log.i(TAG, "delivery line id readed: $deliveryLineId")
         Log.i(TAG, "index readed: $index")
         var foundDeliveryLines: List<DeliveryLine>? = listOf()
-        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
-        if (viewModel.certifiedDeliveryLines.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
-            /*for (deliveryLine in scannedViewModel.certificatedLines.value!!) {
-                foundDeliveryLines = scannedViewModel.certificatedLines.value!!.filter { d ->
-                    d.deliveryId == deliveryId && d.id == deliveryLineId && d.index == index
-                }
-            }*/
-            foundDeliveryLines = viewModel.certifiedDeliveryLines.value!!.filter { d ->
+        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
+        foundDeliveryLines = if (viewModel.certifiedDeliveryLines.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
+            viewModel.certifiedDeliveryLines.value!!.filter { d ->
                 d.deliveryId == deliveryId && d.id == deliveryLineId && d.index == index
             }
         } else if (viewModel.certifiedDeliveryLines.value != null && deliveryLineId > 0) {
-            /*for (deliveryLine in scannedViewModel.certificatedLines.value!!) {
-                foundDeliveryLines = scannedViewModel.certificatedLines.value!!.filter { d ->
-                    d.id == deliveryLineId
-                }
-            }*/
-            foundDeliveryLines = viewModel.certifiedDeliveryLines.value!!.filter { d ->
+            viewModel.certifiedDeliveryLines.value!!.filter { d ->
                 d.id == deliveryLineId
             }
         } else {
@@ -274,7 +257,7 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
             activity?.runOnUiThread {
                 showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
             }
-            return
+            null
         }
         if (!foundDeliveryLines.isNullOrEmpty()) {
             updateStatus("Codigo Encontrado")
@@ -319,16 +302,12 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
 
     private fun updateStatus(status: String?) {
         Log.i(TAG, status ?: "")
-        activity?.runOnUiThread(Runnable() {
-            run() {
-                // Update the status text view on UI thread with current scanner state
-                showSnackbar("$status")
-            }
-        });
+        // Update the status text view on UI thread with current scanner state
+        showSnackbar("$status")
     }
 
     private fun showSnackbar(message: String) {
-        certifiedUnitsRv?.let {
+        activity?.runOnUiThread {
             Snackbar.make(certifiedUnitsRv,
                 message,
                 Snackbar.LENGTH_SHORT)
@@ -341,23 +320,4 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         this.emdkManager?.release(EMDKManager.FEATURE_TYPE.BARCODE);
         this.emdkManager = null;
     }
-/*
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater): Unit {
-        inflater.inflate(R.menu.menu_planification, menu)
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.startRoute -> {
-                startRoute()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    fun startRoute() {
-
-    }*/
 }

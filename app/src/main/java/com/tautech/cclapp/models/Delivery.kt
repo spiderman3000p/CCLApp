@@ -4,7 +4,7 @@ import androidx.room.*
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
 
-@Entity(foreignKeys = [ForeignKey(entity = Planification::class,
+@Entity(indices = [Index("planificationId")], foreignKeys = [ForeignKey(entity = Planification::class,
     parentColumns = ["id"],
     childColumns = ["planificationId"],
     onDelete = ForeignKey.CASCADE,
@@ -24,7 +24,7 @@ data class Delivery(
     var receiverAddressLongitude: String? = "",
     @ColumnInfo(name = "orderDate")
     @SerializedName("orderDate")
-    var deliveryDate: String? = "",
+    var orderDate: String? = "",
     @ColumnInfo(name = "deliveryState")
     @SerializedName("deliveryState")
     var deliveryState: String? = "",
@@ -61,6 +61,9 @@ data class Delivery(
     @ColumnInfo(name = "totalLines")
     @SerializedName("totalLines")
     var totalLines: Int? = 0,
+    @ColumnInfo(name = "totalDeliveredLines")
+    @SerializedName("totalDeliveredLines")
+    var totalDeliveredLines: Int? = 0,
     @ColumnInfo(name = "totalQuantity")
     @SerializedName("totalQuantity")
     var totalQuantity: Int? = 0,

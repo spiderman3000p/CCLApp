@@ -77,7 +77,7 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
             itemView.percentCertifiedTv.text = percentStr
             //itemView.progressBar.setProgress(percent.toInt(), true)
             //itemView.customerTv.text = planification.customerName
-            itemView.addressTv.text = planification.address
+            //itemView.addressTv.text = planification.address
             itemView.dateTv.text = planification.dispatchDate
             itemView.qtyTv.text = planification.totalDeliveries.toString()
             //itemView.deliveryLinesTv.text = planification.totalLines.toString()
@@ -102,7 +102,11 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
                 //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP and Intent.FLAG_ACTIVITY_CLEAR_TASK
                 view.context.startActivity(intent)
             } else if (dataList[position].planificationType == "Urban") {
-                showActionPrompt(dataList[position], view.context)
+                if(dataList[position].state == "OnGoing") {
+                    startPlanificationDetailActivity(dataList[position])
+                } else {
+                    showActionPrompt(dataList[position], view.context)
+                }
             }
         }
     }
@@ -112,21 +116,29 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
         builder.setMessage("")
         builder.setTitle(context.getString(R.string.what_to_do))
         builder.setPositiveButton(context.getString(R.string.certificate), DialogInterface.OnClickListener{ dialog, id ->
-            val intent = Intent(context, CertificateActivity::class.java).apply {
-                putExtra("planification", planification)
-            }
-            //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP and Intent.FLAG_ACTIVITY_CLEAR_TASK
-            context.startActivity(intent)
+            startCertificateActivity(planification)
         })
         builder.setNegativeButton(context.getString(R.string.view), DialogInterface.OnClickListener{ dialog, id ->
-            val intent = Intent(context, PlanificationDetailActivity::class.java).apply {
-                putExtra("planification", planification)
-            }
-            //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP and Intent.FLAG_ACTIVITY_CLEAR_TASK
-            context.startActivity(intent)
+            startPlanificationDetailActivity(planification)
         })
         val dialog: AlertDialog = builder.create();
         dialog.show();
+    }
+
+    fun startCertificateActivity(planification: Planification){
+        val intent = Intent(context, CertificateActivity::class.java).apply {
+            putExtra("planification", planification)
+        }
+        //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP and Intent.FLAG_ACTIVITY_CLEAR_TASK
+        context.startActivity(intent)
+    }
+
+    fun startPlanificationDetailActivity(planification: Planification){
+        val intent = Intent(context, PlanificationDetailActivity::class.java).apply {
+            putExtra("planification", planification)
+        }
+        //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP and Intent.FLAG_ACTIVITY_CLEAR_TASK
+        context.startActivity(intent)
     }
 
     override fun getItemCount(): Int {

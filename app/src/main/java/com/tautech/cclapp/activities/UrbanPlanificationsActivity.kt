@@ -1,6 +1,7 @@
 package com.tautech.cclapp.activities
 
-import android.content.Context
+import android.app.PendingIntent
+import android.content.Intent
 import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteException
 import android.os.Bundle
@@ -10,7 +11,6 @@ import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import android.widget.SearchView
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -19,22 +19,20 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.CollapsingToolbarLayout
 import com.google.android.material.snackbar.Snackbar
-import com.google.gson.Gson
 import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.PlanificationAdapter
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
-import com.tautech.cclapp.models.Driver
-import com.tautech.cclapp.models.KeycloakUser
 import com.tautech.cclapp.models.Planification
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.activity_planifications.*
 import kotlinx.android.synthetic.main.content_scrolling.*
-import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
+import net.openid.appauth.EndSessionRequest
+import net.openid.appauth.EndSessionResponse
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.uiThread
 import org.json.JSONException
@@ -117,7 +115,7 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
                         it.state == "Dispatched" || it.state == "OnGoing"
                     } ?: listOf()
                     viewModel.planifications.postValue(planifications.toMutableList())
-                    Log.i(TAG, "planification response with retrofit: $planifications")
+                    Log.i(TAG, "planifications response with retrofit: $planifications")
                     hideLoader()
                     if (planifications.isEmpty()) {
                         uiThread {
@@ -126,6 +124,7 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
                         }
                     } else {
                         try {
+                            db?.planificationDao()?.deleteAllByType("Urban")
                             db?.planificationDao()?.insertAll(planifications)
                         } catch (ex: SQLiteException) {
                             Log.e(TAG,
@@ -203,8 +202,58 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
     }
 
     private fun signOut() {
-        mStateManager?.signOut(this)
-        //finish()
+        if (mStateManager != null && mStateManager?.current != null && mStateManager?.mConfiguration?.redirectUri != null &&
+            mStateManager?.current?.idToken != null && mStateManager?.current?.authorizationServiceConfiguration != null) {
+            val endSessionRequest = EndSessionRequest.Builder(
+                mStateManager?.current?.authorizationServiceConfiguration!!,
+                mStateManager?.current?.idToken!!,
+                mStateManager?.mConfiguration?.redirectUri!!
+            ).build()
+            if (endSessionRequest != null) {
+                val authService = AuthorizationService(this)
+                val endSessionIntent = authService.getEndSessionRequestIntent(endSessionRequest)
+                startActivityForResult(endSessionIntent, AuthStateManager.RC_END_SESSION)
+            } else {
+                showSnackbar("Error al intentar cerrar sesion")
+            }
+        } else {
+            Log.i(TAG,
+                "mStateManager?.mConfiguration?.redirectUri: ${mStateManager?.mConfiguration?.redirectUri}")
+            Log.i(TAG, "mStateManager?.current?.idToken: ${mStateManager?.current?.idToken}")
+            Log.i(TAG,
+                "mStateManager?.current?.authorizationServiceConfiguration: ${mStateManager?.current?.authorizationServiceConfiguration}")
+            showSnackbar("Error al intentar cerrar sesion")
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == AuthStateManager.RC_END_SESSION) {
+            val resp: EndSessionResponse = EndSessionResponse.fromIntent(data!!)!!
+            val ex = AuthorizationException.fromIntent(data)
+            Log.i(TAG, "logout response: $resp")
+            if (resp != null) {
+                if (ex != null) {
+                    Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                    showAlert("Error",
+                        "No se pudo finalizar la sesion",
+                        true)
+                } else {
+                    mStateManager?.signOut(this)
+                    val mainIntent = Intent(this,
+                        LoginActivity::class.java)
+                    mainIntent.flags =
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(mainIntent)
+                    finish()
+                }
+            } else {
+                Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                showAlert("Error",
+                    "No se pudo finalizar la sesion remota",
+                    true)
+            }
+        }
     }
 
     fun initData() {
@@ -228,8 +277,8 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
         Log.i(TAG, "on resume...")
         initData()
         mStateManager?.revalidateSessionData(this)
-        if (AuthStateManager.keycloakUser != null && AuthStateManager.driverInfo != null) {
-            if (planifications.isNullOrEmpty()) {
+        if (mStateManager?.keycloakUser != null && mStateManager?.driverInfo != null) {
+            if (viewModel.planifications.value.isNullOrEmpty()) {
                 fetchData(this::fetchUserPlanifications)
             } else {
                 showLoader()
@@ -250,6 +299,8 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
     }
 
     override fun onSupportNavigateUp(): Boolean {
+        /*startActivity(Intent(this, DashboardActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK and Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        finish()*/
         onBackPressed()
         return true
     }
@@ -277,10 +328,10 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
             builder.setPositiveButton("Aceptar", null)
             val dialog: AlertDialog = builder.create();
             if(!isFinishing && !isDestroyed) {
-                dialog.show();
+                dialog.show()
                 dialog.setOnDismissListener {
                     if (exitToLogin) {
-                        signOut()
+                        mStateManager?.signOut(this)
                     }
                 }
             }
@@ -319,7 +370,7 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
         planifications.clear()
         val filtered = viewModel.planifications.value?.filter{
             Log.i(TAG, "examining planification ${it.id}: $it")
-            query == null || it.address?.toLowerCase()?.contains(query) == true || it.dispatchDate?.toLowerCase()?.contains(query) == true ||
+            query == null || it.dispatchDate?.toLowerCase()?.contains(query) == true ||
                     it.label?.toLowerCase()?.contains(query) == true || it.planificationType?.toLowerCase()?.contains(query) == true ||
                     it.state?.toLowerCase()?.contains(query) == true || it.licensePlate?.toLowerCase()?.contains(query) == true
         } ?: arrayListOf()

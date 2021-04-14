@@ -7,7 +7,6 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -15,7 +14,6 @@ import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.snackbar.Snackbar
 import com.symbol.emdk.EMDKManager
-import com.symbol.emdk.EMDKResults
 import com.symbol.emdk.barcode.*
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.CertificateActivity
@@ -24,7 +22,6 @@ import com.tautech.cclapp.adapters.DeliveryLineAdapter
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_pending.*
-import org.jetbrains.anko.doAsync
 
 class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     // Variables to hold EMDK related objects
@@ -63,7 +60,7 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         pendingDeliveryLinesRv.adapter = mAdapter
         searchEt4.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
-                if (searchEt4.text.length > 0) {
+                if (searchEt4.text.isNotEmpty()) {
                     searchData(searchEt4.text.toString())
                 } else {
                     filteredData.clear()
@@ -80,14 +77,8 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
             // Requests the EMDKManager object. This is an asynchronous call and should be called from the main thread.
             // The callback also will receive in the main thread without blocking it until the EMDK resources are ready.
             val results = EMDKManager.getEMDKManager(this.requireContext(), this)
-            // Check the return status of getEMDKManager() and update the status TextView accordingly.
-            if (results.statusCode != EMDKResults.STATUS_CODE.SUCCESS) {
-                //updateStatus("Barcode request failed!")
-            } else {
-                //updateStatus("Barcode reader initialization is in progress...")
-            }
         }catch (e: Exception) {
-            //updateStatus("Error loading EMDK Manager")
+            Log.e(TAG, "Error loading EMDK Manager", e)
         }
     }
 
@@ -96,7 +87,7 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         barcodeManager = emdkManager?.getInstance(EMDKManager.FEATURE_TYPE.BARCODE) as BarcodeManager
         // Add external scanner connection listener.
         if (barcodeManager == null) {
-            Toast.makeText(this.context, "Barcode scanning is not supported.", Toast.LENGTH_LONG).show()
+            showSnackbar("Barcode scanning is not supported")
         }
     }
 
@@ -123,7 +114,7 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                     deInitScanner()
                 }
             } else {
-                //updateStatus("Failed to initialize the scanner device.")
+                updateStatus("Failed to initialize the scanner device.")
             }
         }
     }
@@ -214,9 +205,7 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                 dataStr = "$barcodeData  $labelType";
             }
             // Updates EditText with scanned data and type of label on UI thread.
-            doAsync {
-                searchData(dataStr)
-            }
+            searchData(dataStr)
         }
     }
 
@@ -243,9 +232,7 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                 index = 0
             }
             else -> {
-                activity?.runOnUiThread {
-                    showAlert("Error","Error en datos de entrada")
-                }
+                showAlert("Error","Error en datos de entrada")
                 return
             }
         }
@@ -253,20 +240,18 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         Log.i(TAG, "delivery line id readed: $deliveryLineId")
         Log.i(TAG, "index readed: $index")
         var foundDeliveryLines: List<DeliveryLine>? = listOf()
-        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
-        if (viewModel.pendingDeliveryLines.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
-            foundDeliveryLines = viewModel.pendingDeliveryLines.value!!.filter { d ->
+        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
+        foundDeliveryLines = if (viewModel.pendingDeliveryLines.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
+            viewModel.pendingDeliveryLines.value!!.filter { d ->
                 d.deliveryId == deliveryId && d.id == deliveryLineId && d.index == index
             }
         } else if (viewModel.pendingDeliveryLines.value != null && deliveryLineId > 0) {
-            foundDeliveryLines = viewModel.pendingDeliveryLines.value!!.filter { d ->
+            viewModel.pendingDeliveryLines.value!!.filter { d ->
                 d.id == deliveryLineId
             }
         } else {
             Log.e(TAG, "Error con datos de entrada")
-            activity?.runOnUiThread {
-                showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
-            }
+            showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
             return
         }
         if (!foundDeliveryLines.isNullOrEmpty()) {
@@ -311,16 +296,10 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
 
     private fun updateStatus(status: String?) {
         Log.i(TAG, status ?: "")
-        activity?.runOnUiThread(Runnable() {
-            run() {
-                // Update the status text view on UI thread with current scanner state
-                showSnackbar("$status")
-            }
-        });
     }
 
     private fun showSnackbar(message: String) {
-        constraintLayout2?.let {
+        activity?.runOnUiThread {
             Snackbar.make(constraintLayout2,
                 message,
                 Snackbar.LENGTH_SHORT)
@@ -333,23 +312,4 @@ class PendingFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
         this.emdkManager?.release(EMDKManager.FEATURE_TYPE.BARCODE);
         this.emdkManager = null;
     }
-/*
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater): Unit {
-        inflater.inflate(R.menu.menu_planification, menu)
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.startRoute -> {
-                startRoute()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    fun startRoute() {
-
-    }*/
 }

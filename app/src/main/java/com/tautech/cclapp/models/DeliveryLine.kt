@@ -2,8 +2,6 @@ package com.tautech.cclapp.models
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
 
@@ -21,9 +19,9 @@ data class DeliveryLine(
     @SerializedName("quantity")
     @ColumnInfo(name = "quantity")
     var quantity: Int = 0,
-    @SerializedName("deliveredQuantity")
-    @ColumnInfo(name = "deliveredQuantity")
-    var deliveredQuantity: Int = 0,
+    @SerializedName("delivered")
+    @ColumnInfo(name = "delivered")
+    var delivered: Int = 0,
     @SerializedName("reference")
     @ColumnInfo(name = "reference")
     var reference: String = "",
@@ -45,9 +43,9 @@ data class DeliveryLine(
     @SerializedName("certified")
     @ColumnInfo(name = "certified")
     var certified: Int = 0,
-    @SerializedName("delivered")
+    /*@SerializedName("delivered")
     @ColumnInfo(name = "delivered")
-    var delivered: Boolean? = null,
+    var delivered: Int? = null,*/
     @SerializedName("index")
     @ColumnInfo(name = "index")
     var index: Int = 0,

@@ -11,6 +11,39 @@
         android:layout_height="wrap_content"
         android:background="@drawable/gradient_blue">
 
+        <ImageButton
+            android:id="@+id/howGoBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="10dp"
+            android:layout_weight="0.3"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:padding="5dp"
+            android:src="@android:drawable/ic_dialog_map"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/deliveryStateChip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0.3"
+            android:checkable="false"
+            android:checked="false"
+            android:elegantTextHeight="false"
+            android:text="@string/planned"
+            android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:checkedIconVisible="false"
+            app:chipBackgroundColor="#E48814"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
         <LinearLayout
             android:id="@+id/linearLayout2"
             android:layout_width="match_parent"
@@ -27,6 +60,8 @@
                 android:id="@+id/deliveryNumberTv"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_weight="0.4"
+                android:text="#81841514"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
                 android:textStyle="bold" />
@@ -46,6 +81,7 @@
                 android:typeface="normal" />
 
             <TextView
+                android:id="@+id/dateTv2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
@@ -119,39 +155,6 @@
                 android:layout_height="wrap_content" />
 
         </LinearLayout>
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/deliveryStateChip"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:checkable="false"
-            android:checked="false"
-            android:elegantTextHeight="false"
-            android:text="@string/planned"
-            android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            app:checkedIconVisible="false"
-            app:chipBackgroundColor="#E48814"
-            app:layout_constraintBottom_toBottomOf="@+id/howGoBtn"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintHorizontal_bias="0.5"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="@+id/howGoBtn" />
-
-        <Button
-            android:id="@+id/howGoBtn"
-            style="@style/buttonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:layout_marginEnd="10dp"
-            android:text="@string/how_go"
-            android:textAllCaps="false"
-            android:textSize="12sp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
 
         <FrameLayout
             android:layout_width="match_parent"

@@ -19,10 +19,10 @@ interface DeliveryDao {
     fun getGroupedLines(deliveryId: Long): List<DeliveryLine>
 
     @Query("SELECT * FROM delivery WHERE planificationId = CAST(:planificationId AS NUMERIC)")
-    fun getAllByPlanification(planificationId: Int): List<Delivery>
+    fun getAllByPlanification(planificationId: Long): List<Delivery>
 
     @Query("SELECT * FROM delivery WHERE deliveryid IN (:deliveryIds)")
-    fun loadAllByIds(deliveryIds: IntArray): List<Delivery>
+    fun loadAllByIds(deliveryIds: LongArray): List<Delivery>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(delivery: Delivery)

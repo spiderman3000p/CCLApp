@@ -23,9 +23,7 @@ import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
 import com.tautech.cclapp.adapters.PlanificationLineAdapter
 import com.tautech.cclapp.models.Delivery
-import com.tautech.cclapp.models.PlanificationLine
 import kotlinx.android.synthetic.main.fragment_pending_urban.*
-import org.jetbrains.anko.doAsync
 
 class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     // Variables to hold EMDK related objects
@@ -66,7 +64,7 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
         })
         searchEt4.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
-                if (searchEt4.text.length > 0) {
+                if (searchEt4.text.isNotEmpty()) {
                     searchData(searchEt4.text.toString())
                 } else {
                     filteredData.clear()
@@ -95,12 +93,13 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
             val results = EMDKManager.getEMDKManager(this.requireContext(), this)
             // Check the return status of getEMDKManager() and update the status TextView accordingly.
             if (results.statusCode != EMDKResults.STATUS_CODE.SUCCESS) {
-                //updateStatus("Barcode request failed!")
+                updateStatus("Barcode request failed!")
             } else {
-                //updateStatus("Barcode reader initialization is in progress...")
+                updateStatus("Barcode reader initialization is in progress...")
             }
         }catch (e: Exception) {
             //updateStatus("Error loading EMDK Manager")
+            Log.e(TAG, "Error loading EMDK Manager")
         }
     }
 
@@ -136,7 +135,7 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
                     deInitScanner()
                 }
             } else {
-                //updateStatus("Failed to initialize the scanner device.")
+                updateStatus("Failed to initialize the scanner device.")
             }
         }
     }
@@ -227,16 +226,14 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
                 dataStr = "$barcodeData  $labelType";
             }
             // Updates EditText with scanned data and type of label on UI thread.
-            doAsync {
-                searchData(dataStr)
-            }
+            searchData(dataStr)
         }
     }
 
     fun searchData(barcode: String) {
         Log.i(TAG, "barcode readed: $barcode")
         var foundDeliveryLines: List<Delivery> = listOf()
-        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
+        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
         if (barcode.isNotEmpty()) {
             foundDeliveryLines = viewModel.deliveries.value!!.filter { d ->
                 d.deliveryId == barcode.toLong() && listOf("OnGoing", "Dispatched", "Created", "Planned", "DeliveryPlanned", "ReDispatched").contains(d.deliveryState)
@@ -312,23 +309,4 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
         this.emdkManager?.release(EMDKManager.FEATURE_TYPE.BARCODE);
         this.emdkManager = null;
     }
-/*
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater): Unit {
-        inflater.inflate(R.menu.menu_planification, menu)
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.startRoute -> {
-                startRoute()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    fun startRoute() {
-
-    }*/
 }

@@ -5,9 +5,6 @@ import android.content.Intent
 import android.database.sqlite.*
 import android.os.Bundle
 import android.util.Log
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.View
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
@@ -19,6 +16,7 @@ import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.snackbar.Snackbar
+import com.google.gson.Gson
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
@@ -29,9 +27,10 @@ import com.tautech.cclapp.models.DeliveryLine
 import com.tautech.cclapp.models.Planification
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.activity_delivery_detail.*
-import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
+import net.openid.appauth.EndSessionRequest
+import net.openid.appauth.EndSessionResponse
 import org.jetbrains.anko.contentView
 import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
@@ -39,6 +38,7 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 
 class DeliveryDetailActivity : AppCompatActivity() {
+    private val MANAGE_ACTIVITY = 1
     private var newState: String = ""
     val TAG = "DELIVERY_DETAIL_ACTIVITY"
     var planification: Planification? = null
@@ -95,13 +95,12 @@ class DeliveryDetailActivity : AppCompatActivity() {
             Log.i(TAG, "Delivery observada: ${_del.deliveryId}")
             if (_del != null) {
                 delivery = _del
-                getDeliveryLines()
+                if(viewModel.deliveryLines.value.isNullOrEmpty()) {
+                    getDeliveryLines()
+                }
                 invalidateOptionsMenu()
                 checkManageBtnStatus()
             }
-        })
-        viewModel.deliveryLines.observe(this, Observer{lines ->
-            Log.i(TAG, "Delivery lines observadas(${lines.size}): ${lines}")
         })
         val extras = intent.extras
         if (extras != null) {
@@ -128,12 +127,16 @@ class DeliveryDetailActivity : AppCompatActivity() {
 
     private fun getDeliveryLines() {
         doAsync {
-            val localDeliveryLines = db?.deliveryDao()?.getLines(delivery?.deliveryId!!)
-            if(localDeliveryLines.isNullOrEmpty()){
+            //if(viewModel.deliveryLines.value?.isNullOrEmpty() == true){
+                Log.i(TAG, "delivery lines es nulo o vacio, solicitando delivery lines remotos...")
                 fetchData(this@DeliveryDetailActivity::fetchDeliveryLines)
-            } else {
-                viewModel.deliveryLines.postValue(localDeliveryLines.toMutableList())
-            }
+            /*} else {
+                Log.i(TAG, "delivery lines no es nulo o vacio, obteniendo delivery lines locales...")
+                val localDeliveryLines = db?.deliveryDao()?.getGroupedLines(delivery?.deliveryId!!)
+                if (!localDeliveryLines.isNullOrEmpty()) {
+                    viewModel.deliveryLines.postValue(localDeliveryLines.toMutableList())
+                }
+            }*/
         }
     }
 
@@ -168,14 +171,10 @@ class DeliveryDetailActivity : AppCompatActivity() {
         if (delivery != null) {
             state.putSerializable("delivery", delivery)
         }
-        /*if (viewModel.stateFormDefinitions.value != null) {
-            // TODO: arreglar esto
-            //state.putSerializable("stateFormDefinitions", viewModel.stateFormDefinitions.value)
-        }*/
     }
 
     fun checkManageBtnStatus(){
-        if (listOf("OnGoing", "Planned", "DeliveryPlanned", "Created").contains(delivery?.deliveryState)) {
+        if (listOf("OnGoing", "Planned", "DeliveryPlanned", "Created", "UnDelivered").contains(delivery?.deliveryState)) {
             manageBtn.visibility = View.VISIBLE
         } else {
             manageBtn.visibility = View.GONE
@@ -183,102 +182,78 @@ class DeliveryDetailActivity : AppCompatActivity() {
     }
 
     private fun signOut() {
-        mStateManager?.signOut(this)
-        //finish()
+        if (mStateManager != null && mStateManager?.current != null && mStateManager?.mConfiguration?.redirectUri != null &&
+            mStateManager?.current?.idToken != null && mStateManager?.current?.authorizationServiceConfiguration != null) {
+            val endSessionRequest = EndSessionRequest.Builder(
+                mStateManager?.current?.authorizationServiceConfiguration!!,
+                mStateManager?.current?.idToken!!,
+                mStateManager?.mConfiguration?.redirectUri!!
+            ).build()
+            if (endSessionRequest != null) {
+                val authService = AuthorizationService(this)
+                val endSessionIntent = authService.getEndSessionRequestIntent(endSessionRequest)
+                startActivityForResult(endSessionIntent, AuthStateManager.RC_END_SESSION)
+            } else {
+                showSnackbar("Error al intentar cerrar sesion")
+            }
+        } else {
+            Log.i(TAG,
+                "mStateManager?.mConfiguration?.redirectUri: ${mStateManager?.mConfiguration?.redirectUri}")
+            Log.i(TAG, "mStateManager?.current?.idToken: ${mStateManager?.current?.idToken}")
+            Log.i(TAG,
+                "mStateManager?.current?.authorizationServiceConfiguration: ${mStateManager?.current?.authorizationServiceConfiguration}")
+            showSnackbar("Error al intentar cerrar sesion")
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == AuthStateManager.RC_END_SESSION) {
+            val resp: EndSessionResponse = EndSessionResponse.fromIntent(data!!)!!
+            val ex = AuthorizationException.fromIntent(data)
+            Log.i(TAG, "logout response: $resp")
+            if (resp != null) {
+                if (ex != null) {
+                    Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                    showAlert("Error",
+                        "No se pudo finalizar la sesion",
+                        this::signOut)
+                } else {
+                    mStateManager?.signOut(this)
+                    val mainIntent = Intent(this,
+                        LoginActivity::class.java)
+                    mainIntent.flags =
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(mainIntent)
+                    finishAndRemoveTask()
+                }
+            } else {
+                Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                showAlert("Error",
+                    "No se pudo finalizar la sesion remota",
+                    this::signOut)
+            }
+        }
+        if (requestCode == MANAGE_ACTIVITY && data?.hasExtra("deliveredLines") == true){
+            Log.i(TAG, "volviendo de manage activity...")
+            val deliveryLines = data.getSerializableExtra("deliveredLines") as ArrayList<DeliveryLine>
+            Log.i(TAG, "delivery lines obtenidas de activity manage: $deliveryLines")
+            if (!deliveryLines.isNullOrEmpty()) {
+                Log.i(TAG, "actualizando delivery lines...")
+                viewModel.deliveryLines.value?.forEach {it ->
+                    val found = deliveryLines.find{dl ->
+                        dl.id == it.id
+                    }
+                    it.delivered = found?.delivered ?: 0
+                }
+                viewModel.deliveryLines.postValue(viewModel.deliveryLines.value)
+            }
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {
         onBackPressed()
         return true
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        val inflater: MenuInflater = menuInflater
-        inflater.inflate(R.menu.menu_delivery, menu)
-        menu.findItem(R.id.setAsCancelled).isVisible = false
-        menu.findItem(R.id.setAsDelivered).isVisible = false
-        menu.findItem(R.id.setAsUnDelivered).isVisible = false
-        when(planification?.state) {
-            "Created" -> {
-                menu.findItem(R.id.setAsCancelled).isVisible = false
-                menu.findItem(R.id.setAsDelivered).isVisible = false
-                menu.findItem(R.id.setAsUnDelivered).isVisible = false
-            }
-            "Planned" -> {
-                menu.findItem(R.id.setAsCancelled).isVisible = false
-                menu.findItem(R.id.setAsDelivered).isVisible = false
-                menu.findItem(R.id.setAsUnDelivered).isVisible = false
-            }
-            "DeliveryPlanned" -> {
-                menu.findItem(R.id.setAsCancelled).isVisible = false
-                menu.findItem(R.id.setAsDelivered).isVisible = false
-                menu.findItem(R.id.setAsUnDelivered).isVisible = false
-            }
-            "OnGoing" -> {
-                menu.findItem(R.id.setAsCancelled).isVisible = true
-                menu.findItem(R.id.setAsDelivered).isVisible = true
-                menu.findItem(R.id.setAsUnDelivered).isVisible = true
-            }
-            "Delivered" -> {
-                menu.findItem(R.id.setAsCancelled).isVisible = false
-                menu.findItem(R.id.setAsDelivered).isVisible = false
-                menu.findItem(R.id.setAsUnDelivered).isVisible = false
-            }
-        }
-        return true
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu?): Boolean {
-        menu?.findItem(R.id.setAsCancelled)?.isVisible = false
-        menu?.findItem(R.id.setAsDelivered)?.isVisible = false
-        menu?.findItem(R.id.setAsUnDelivered)?.isVisible = false
-        when(planification?.state) {
-            "Created" -> {
-                menu?.findItem(R.id.setAsCancelled)?.isVisible = false
-                menu?.findItem(R.id.setAsDelivered)?.isVisible = false
-                menu?.findItem(R.id.setAsUnDelivered)?.isVisible = false
-            }
-            "Planned" -> {
-                menu?.findItem(R.id.setAsCancelled)?.isVisible = false
-                menu?.findItem(R.id.setAsDelivered)?.isVisible = false
-                menu?.findItem(R.id.setAsUnDelivered)?.isVisible = false
-            }
-            "DeliveryPlanned" -> {
-                menu?.findItem(R.id.setAsCancelled)?.isVisible = false
-                menu?.findItem(R.id.setAsDelivered)?.isVisible = false
-                menu?.findItem(R.id.setAsUnDelivered)?.isVisible = false
-            }
-            "OnGoing" -> {
-                menu?.findItem(R.id.setAsCancelled)?.isVisible = true
-                menu?.findItem(R.id.setAsDelivered)?.isVisible = true
-                menu?.findItem(R.id.setAsUnDelivered)?.isVisible = true
-            }
-            "Delivered" -> {
-                menu?.findItem(R.id.setAsCancelled)?.isVisible = false
-                menu?.findItem(R.id.setAsDelivered)?.isVisible = false
-                menu?.findItem(R.id.setAsUnDelivered)?.isVisible = false
-            }
-        }
-        return super.onPrepareOptionsMenu(menu)
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.setAsDelivered -> {
-                askForChangeState("Delivered")
-                true
-            }
-            R.id.setAsCancelled -> {
-                askForChangeState("Cancelled")
-                true
-            }
-            R.id.setAsUnDelivered -> {
-                askForChangeState("UnDelivered")
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
     }
 
     fun askForChangeState(state: String) {
@@ -374,16 +349,13 @@ class DeliveryDetailActivity : AppCompatActivity() {
                     val response = call.body()
                     Log.i(TAG, "fetching delivery lines response $response")
                     if (response != null && response._embedded.planificationDeliveryDetailVO1s.isNotEmpty()) {
-                        val deliveryLines = mutableListOf<DeliveryLine>()
                         for (deliveryLine in response._embedded.planificationDeliveryDetailVO1s) {
-                            for (i in 0 until deliveryLine.quantity) {
-                                deliveryLines.add(deliveryLine.copy(index = i,
-                                    planificationId = planification?.id!!))
-                            }
+                            deliveryLine.planificationId = planification?.id!!
                         }
-                        viewModel.deliveryLines.postValue(deliveryLines)
+                        viewModel.deliveryLines.postValue(response._embedded.planificationDeliveryDetailVO1s)
                         try {
-                            db?.deliveryLineDao()?.insertAll(deliveryLines)
+                            db?.deliveryLineDao()?.deleteAllByDelivery(viewModel.delivery.value?.deliveryId!!)
+                            db?.deliveryLineDao()?.insertAll(response._embedded.planificationDeliveryDetailVO1s)
                         } catch (ex: SQLiteException) {
                             Log.e(TAG,
                                 "Error actualizando delivery lines en la BD local",
@@ -428,20 +400,27 @@ class DeliveryDetailActivity : AppCompatActivity() {
         runOnUiThread {
             val builder = AlertDialog.Builder(this)
             builder.setTitle(getString(R.string.choose_state))
-            builder.setItems(R.array.delivery_states_actions) { dialog, which ->
-                        when(which){
-                            0 -> {
-                                val intent = Intent(this, ManageDeliveryActivity::class.java)
-                                intent.putExtra("planification", planification)
-                                intent.putExtra("delivery", delivery)
-                                intent.putExtra("state", "Delivered")
-                                startActivity(intent)
-                            }
-                            1 -> {
-                                askForChangeState("UnDelivered")
-                            }
-                        }
+            builder.setItems(when(delivery?.deliveryState){
+                "UnDelivered" -> R.array.delivery_states_actions_undelivered
+                else -> R.array.delivery_states_actions}) { dialog, which ->
+                when(which){
+                    0 -> {
+                        val intent = Intent(this, ManageDeliveryActivity::class.java)
+                        intent.putExtra("planification", planification)
+                        intent.putExtra("delivery", delivery)
+                        intent.putExtra("state", "Delivered")
+                        startActivityForResult(intent, MANAGE_ACTIVITY)
                     }
+                    1 -> {
+                        //askForChangeState("UnDelivered")
+                        val intent = Intent(this, ManageDeliveryActivity::class.java)
+                        intent.putExtra("planification", planification)
+                        intent.putExtra("delivery", delivery)
+                        intent.putExtra("state", "UnDelivered")
+                        startActivityForResult(intent, MANAGE_ACTIVITY)
+                    }
+                }
+            }
             val dialog: AlertDialog = builder.create()
             dialog.show()
         }

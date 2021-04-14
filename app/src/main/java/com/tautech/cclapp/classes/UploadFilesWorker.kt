@@ -16,13 +16,10 @@ import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.MyWorkerManagerService
-import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthorizationService
 import okhttp3.MediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.Retrofit
-import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -89,7 +86,7 @@ class UploadFilesWorker
             inputData.hasKeyWithValueOfType<Long>("customerId")) {
             val itemName = inputData.getString("itemName")
             val fileTag = inputData.getString("fileTag")
-            val savedFormId = inputData.getInt("savedFormId", 0)
+            val savedFormId = inputData.getLong("savedFormId", 0)
             val customerId = inputData.getLong("customerId", 0)
             if (fileTag != null && MyWorkerManagerService.filesToUpload.containsKey(fileTag)) {
                 try {
@@ -106,7 +103,7 @@ class UploadFilesWorker
                             "media type de ${itemName}:, mediaTypeStr: $mediaTypeStr, mimeType: $mimeType")
                         val requestFile = RequestBody.create(MediaType.parse("multipart/form-data"),
                             file)
-                        val body = MultipartBody.Part.createFormData("file", itemName, requestFile)
+                        val body = MultipartBody.Part.createFormData("file", file.name, requestFile)
                         val dataService: CclDataService? = CclClient.getInstance()?.create(
                             CclDataService::class.java)
                         if (dataService != null && mStateManager?.current?.accessToken != null) {

@@ -1,24 +1,26 @@
 package com.tautech.cclapp.activities
 
+/*import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.analytics.ktx.analytics
+import com.google.firebase.analytics.ktx.logEvent
+import com.google.firebase.ktx.Firebase*/
+
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
-/*import com.google.firebase.analytics.FirebaseAnalytics
-import com.google.firebase.analytics.ktx.analytics
-import com.google.firebase.analytics.ktx.logEvent
-import com.google.firebase.ktx.Firebase*/
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
-import com.tautech.cclapp.classes.Configuration
 import kotlinx.android.synthetic.main.activity_login.*
 import net.openid.appauth.*
 import net.openid.appauth.browser.VersionedBrowserMatcher
 import java.util.concurrent.CountDownLatch
+
 
 class LoginActivity : AppCompatActivity() {
     val TAG = "LOGIN_ACTIVITY"
@@ -75,7 +77,17 @@ class LoginActivity : AppCompatActivity() {
             mAuthStateManager.replace(AuthState())
             mAuthStateManager.mConfiguration.acceptConfiguration()
         }
-
+        val resp = EndSessionResponse.fromIntent(intent)
+        val ex = AuthorizationException.fromIntent(intent)
+        if (resp != null) {
+            // authorization completed
+            Log.i(TAG, "Logout successfull")
+            mAuthStateManager.signOut(this)
+        } else if (ex != null) {
+            // authorization failed, check ex for more details
+            Log.e(TAG, "Logout failed", ex)
+            Toast.makeText(this, "Error al finalizar sesion", Toast.LENGTH_SHORT).show()
+        }
         loginBtn.setOnClickListener {
            // doLogin()
             //getAccessToken()
@@ -142,8 +154,12 @@ class LoginActivity : AppCompatActivity() {
             val config = AuthorizationServiceConfiguration(
                 mAuthStateManager.mConfiguration.authEndpointUri!!,
                 mAuthStateManager.mConfiguration.tokenEndpointUri!!,
-                mAuthStateManager.mConfiguration.registrationEndpointUri)
+                mAuthStateManager.mConfiguration.registrationEndpointUri,
+                mAuthStateManager.mConfiguration.endSessionEndpoint)
+            Log.i(TAG, "end session uri on config login ${config.endSessionEndpoint}")
             mAuthStateManager.replace(AuthState(config))
+            Log.i(TAG,
+                "end session uri on mAuthState login ${mAuthStateManager.current.authorizationServiceConfiguration?.endSessionEndpoint}")
             initializeClient()
             return
         }
@@ -164,7 +180,7 @@ class LoginActivity : AppCompatActivity() {
         Log.i(TAG, "on activity result")
         if (resultCode == RESULT_CANCELED) {
             Log.e(TAG, "Auth canceled")
-        } else {
+        } else if (resultCode == RESULT_OK && requestCode == RC_AUTH){
             val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
             with(sharedPref.edit()) {
                 putBoolean("isLoggedIn", true)

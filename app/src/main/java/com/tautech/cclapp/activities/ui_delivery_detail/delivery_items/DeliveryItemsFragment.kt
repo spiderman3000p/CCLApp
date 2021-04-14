@@ -23,7 +23,6 @@ import com.tautech.cclapp.activities.DeliveryDetailActivityViewModel
 import com.tautech.cclapp.adapters.DeliveryLineItemAdapter
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_delivery_items.*
-import org.jetbrains.anko.doAsync
 
 class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
   // Variables to hold EMDK related objects
@@ -51,7 +50,15 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
     initAdapter()
     viewModel.delivery.observe(viewLifecycleOwner, Observer{_delivery ->
       filteredData.clear()
-      filteredData.addAll(viewModel.deliveryLines.value!!)
+      if(viewModel.deliveryLines.value != null) {
+        filteredData.addAll(viewModel.deliveryLines.value!!)
+      }
+      mAdapter?.notifyDataSetChanged()
+    })
+    viewModel.deliveryLines.observe(viewLifecycleOwner, Observer{lines ->
+      Log.i(TAG, "Delivery lines observadas(${lines.size}): ${lines}")
+      filteredData.clear()
+      filteredData.addAll(lines)
       mAdapter?.notifyDataSetChanged()
     })
     searchEt4.setOnKeyListener { v, keyCode, event ->
@@ -90,6 +97,7 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
       }
     }catch (e: Exception) {
       //updateStatus("Error loading EMDK Manager")
+      Log.e(TAG, "Error loading EMDK Manager")
     }
   }
 
@@ -216,16 +224,14 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
         dataStr = "$barcodeData  $labelType";
       }
       // Updates EditText with scanned data and type of label on UI thread.
-      doAsync {
-        searchData(dataStr)
-      }
+      searchData(dataStr)
     }
   }
 
   fun searchData(barcode: String) {
     Log.i(TAG, "barcode readed: $barcode")
     var foundDeliveryLines: List<DeliveryLine> = listOf()
-    //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
+    //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
     if (barcode.isNotEmpty()) {
       foundDeliveryLines = viewModel.deliveryLines.value?.filter { d ->
         d.packetType.toLowerCase().contains(barcode.toLowerCase()) ||

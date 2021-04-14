@@ -124,7 +124,7 @@
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/textView"
+                    android:id="@+id/subtitile"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/deliveries"
@@ -136,7 +136,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="5dp"
-                    android:layout_toEndOf="@id/textView"
+                    android:layout_toEndOf="@id/subtitile"
                     android:text="(100)"
                     android:textAppearance="@style/TextAppearance.AppCompat.Medium"
                     android:textStyle="bold" />

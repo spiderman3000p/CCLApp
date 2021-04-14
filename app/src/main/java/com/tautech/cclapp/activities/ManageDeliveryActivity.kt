@@ -1,39 +1,36 @@
 package com.tautech.cclapp.activities
 
 import android.content.DialogInterface
+import android.content.Intent
 import android.database.sqlite.SQLiteAccessPermException
 import android.database.sqlite.SQLiteCantOpenDatabaseException
 import android.database.sqlite.SQLiteDatabaseLockedException
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.viewpager.widget.ViewPager
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkRequest
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
+import com.tautech.cclapp.activities.ui_delivery_detail.delivery_payment.DeliveryPaymentFragment
+import com.tautech.cclapp.adapters.SectionsPagerAdapter
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
-import com.tautech.cclapp.classes.UploadFilesWorker
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.*
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.MyWorkerManagerService
-import com.tautech.cclapp.adapters.SectionsPagerAdapter
 import kotlinx.android.synthetic.main.activity_manage_delivery.*
-import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
-import okhttp3.MultipartBody
+import net.openid.appauth.EndSessionRequest
+import net.openid.appauth.EndSessionResponse
 import org.jetbrains.anko.contentView
 import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
@@ -42,10 +39,13 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 
 class ManageDeliveryActivity : AppCompatActivity() {
+    private var deliveryLinesLoaded: Boolean = false
+    private var paymentDetailsSaved: Boolean = false
+    private var paymentDetails: DeliveryPaymentDetail? = null
     private var filesSaved: Boolean = false
     private var savedItems: Boolean = false
     private var deliveredItemList: List<DeliveredItemToUpload>? = null
-    private var savedFormId: Int? = null
+    private var savedFormId: Long? = null
     val TAG = "MANAGE_DELIVERY_ACTIVITY"
     var planification: Planification? = null
     var delivery: Delivery? = null
@@ -58,17 +58,20 @@ class ManageDeliveryActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_manage_delivery)
-        val sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager)
         val viewPager: ViewPager = findViewById(R.id.view_pager2)
-        viewPager.adapter = sectionsPagerAdapter
         val tabs: TabLayout = findViewById(R.id.tabs2)
-        //viewPager.setOffscreenPageLimit(2)
+        val sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager)
+        viewPager.offscreenPageLimit = 3
+        viewPager.adapter = sectionsPagerAdapter
         tabs.setupWithViewPager(viewPager)
         doneBtn.isEnabled = false
         doneBtn.setOnClickListener { view ->
-            val fragment: DeliveryFormFragment? = ((view_pager2 as ViewPager).adapter as SectionsPagerAdapter).formFragment
+            val fragment = DeliveryFormFragment.getInstance()
+            val fragment2 = DeliveryPaymentFragment.getInstance()
             //supportFragmentManager.findFragmentByTag("DeliveryForm") as DeliveryFormFragment?
-            if (fragment != null && fragment.isValidForm()) {
+            val validForm = fragment?.isValidForm()
+            if (fragment != null && validForm == true && (viewModel.showPaymentMethod.value == false ||
+               (viewModel.showPaymentMethod.value == true && fragment2?.isValidForm() == true))) {
                 askForChangeState()
             }
         }
@@ -96,26 +99,53 @@ class ManageDeliveryActivity : AppCompatActivity() {
         }
         viewModel.state.observe(this, Observer{newState ->
             Log.i(TAG, "nuevo estado observado $newState")
-            doAsync {
-                Log.i(TAG, "buscando definiciones en la BD local para el estado $newState...")
-                val foundStateFormDefinition = db?.stateFormDefinitionDao()?.getAllByStateAndCustomer(newState, planification?.customerId?.toInt()!!)
-                if (foundStateFormDefinition != null) {
+            //doAsync {
+                /*Log.i(TAG, "buscando definiciones en la BD local para el estado $newState...")
+                val foundStateFormDefinition = db?.stateFormDefinitionDao()?.getAllByStateAndCustomer(newState, planification?.customerId!!)
+                if (!foundStateFormDefinition.isNullOrEmpty()) {
                     Log.i(TAG, "found state form definition: $foundStateFormDefinition")
-                    foundStateFormDefinition.formFieldList = db?.stateFormDefinitionDao()?.getFields(foundStateFormDefinition.id!!.toInt())
-                    Log.i(TAG, "found fieldList: ${foundStateFormDefinition.formFieldList}")
+                    foundStateFormDefinition[0].formFieldList = db?.stateFormDefinitionDao()?.getFields(foundStateFormDefinition[0].id!!)
+                    Log.i(TAG, "found fieldList: ${foundStateFormDefinition[0].formFieldList}")
+                    viewModel.stateFormDefinition.postValue(foundStateFormDefinition[0])
                 } else {
-                    Log.e(TAG, "form definitions not found for state $newState and customer ${planification?.customerId?.toInt()}")
+                    Log.e(TAG, "form definitions not found for state $newState and customer ${planification?.customerId}")
+                    viewModel.stateFormDefinition.postValue(null)
+                }*/
+                if (!deliveryLinesLoaded){
+                    loadDeliveryLines()
                 }
-                viewModel.stateFormDefinition.postValue(foundStateFormDefinition)
                 checkDoneBtnStatus()
+            //}
+        })
+        viewModel.showPaymentMethod.observe(this, Observer{show ->
+            Log.i(TAG, "showPaymentMethod recibido $show")
+            if (!show) {
+                Log.i(TAG, "removiendo pestaña de pago...")
+                tabs.removeTabAt(2)
+                val _sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager, true)
+                viewPager.offscreenPageLimit = 2
+                viewPager.adapter = _sectionsPagerAdapter
+                tabs.setupWithViewPager(viewPager)
             }
+        })
+        viewModel.changedDeliveryLine.observe(this, Observer {deliveryLine ->
+            Log.i(TAG, "cantidad de items cambiada para el delivery line: $deliveryLine")
+            val changedDeliveryLine = viewModel.deliveryLines.value?.find {
+                it.id == deliveryLine.id
+            }
+            changedDeliveryLine?.delivered = deliveryLine.delivered
+            val state = getFinalFutureState()
+            Log.i(TAG, "estado final generado: $state")
+            viewModel.state.setValue(state)
         })
         val extras = intent.extras
         if (extras != null) {
             // TODO obtener planificacion id de shared preferences y luego la planificacion de la BD
             if (extras.containsKey("planification")) {
                 planification = extras.getSerializable("planification") as Planification
-                viewModel.planification.postValue(planification)
+                fetchCustomerDetails()
+                fetchPaymentMethods()
+                viewModel.planification.setValue(planification)
             } else {
                 showAlert(getString(R.string.error), getString(R.string.no_planification_received))
                 Log.e(TAG, "no se recibio ninguna planificacion")
@@ -123,7 +153,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
             }
             if (extras.containsKey("delivery")) {
                 delivery = extras.getSerializable("delivery") as Delivery
-                viewModel.delivery.postValue(delivery)
+                viewModel.delivery.setValue(delivery)
             } else {
                 showAlert(getString(R.string.error), getString(R.string.no_delivery_received))
                 Log.e(TAG, "no se recibio ninguna delivery")
@@ -137,7 +167,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
                     Log.e(TAG, "no se recibio ningun estado")
                     finish()
                 } else {
-                    viewModel.state.postValue(newState)
+                    viewModel.state.setValue(newState)
                 }
             } else {
                 Log.e(TAG, "no se recibio ningun estado")
@@ -153,7 +183,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
 
     fun checkDoneBtnStatus(){
         runOnUiThread {
-            doneBtn.isEnabled = listOf("UnDelivered", "Delivered").contains(viewModel.state.value) && viewModel.stateFormDefinition.value != null
+            doneBtn.isEnabled = listOf("UnDelivered", "Delivered", "Partial").contains(viewModel.state.value)
         }
     }
 
@@ -169,9 +199,9 @@ class ManageDeliveryActivity : AppCompatActivity() {
             if (delivery == null) {
                 loadDelivery(delivery?.deliveryId)
             }
-            if (viewModel.deliveryLines.value.isNullOrEmpty()){
+            /*if (viewModel.state.value != null && viewModel.deliveryLines.value.isNullOrEmpty()){
                 loadDeliveryLines()
-            }
+            }*/
             hideLoader()
         }
     }
@@ -193,22 +223,117 @@ class ManageDeliveryActivity : AppCompatActivity() {
     }
 
     fun loadDeliveryLines(){
-        val deliveryLines = db?.deliveryDao()?.getGroupedLines(delivery?.deliveryId!!) ?: listOf()
-        if (!deliveryLines.isNullOrEmpty()) {
-            Log.i(TAG, "deliveryLines cargadas de la bd local: $deliveryLines")
-            when (viewModel.state.value) {
-                "Delivered" -> {
-                    deliveryLines.forEach { deliveryLine ->
-                        deliveryLine.deliveredQuantity = deliveryLine.quantity
+        doAsync {
+            val deliveryLines =
+                db?.deliveryDao()?.getGroupedLines(delivery?.deliveryId!!) ?: listOf()
+            if (!deliveryLines.isNullOrEmpty()) {
+                Log.i(TAG,
+                    "deliveryLines cargadas de la bd local para la guia ${delivery?.deliveryId} y el estado ${viewModel.state.value}: $deliveryLines")
+                when (viewModel.state.value) {
+                    "Delivered" -> {
+                        deliveryLines.forEach { deliveryLine ->
+                            deliveryLine.delivered = deliveryLine.quantity
+                        }
+                    }
+                    "UnDelivered" -> {
+                        deliveryLines.forEach { deliveryLine ->
+                            deliveryLine.delivered = 0
+                        }
+                    }
+                    else -> {
+                        deliveryLines.forEach { deliveryLine ->
+                            deliveryLine.delivered = deliveryLine.quantity
+                        }
                     }
                 }
-                "UnDelivered" -> {
-                    deliveryLines.forEach { deliveryLine ->
-                        deliveryLine.deliveredQuantity = 0
+                Log.i(TAG, "enviando delivery lines: $deliveryLines")
+                deliveryLinesLoaded = true
+                viewModel.deliveryLines.postValue(deliveryLines.toMutableList())
+            }
+        }
+    }
+
+    fun fetchCustomerDetails() {
+        fetchData(this::fetchCustomerDetails)
+    }
+
+    private fun fetchCustomerDetails(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
+        if (ex != null) {
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban los detalles del customer", ex)
+            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+            }
+            return
+        }
+        Log.i(TAG, "loading customer details...")
+        val url = "customers/${planification?.customerId}"
+        Log.i(TAG, "built endpoint: $url")
+        val dataService: CclDataService? = CclClient.getInstance()?.create(
+            CclDataService::class.java)
+        if (dataService != null && accessToken != null) {
+            doAsync {
+                try {
+                    val call = dataService.getCustomer(url,
+                        "Bearer $accessToken")
+                        .execute()
+                    val response = call.body()
+                    Log.i(TAG, "respuesta al cargar customer details: ${response}")
+                    if (response != null) {
+                        Log.i(TAG, "enviando showPaymentMethod ${response.showPaymentMethod}")
+                        viewModel.showPaymentMethod.postValue(response.showPaymentMethod)
+                    } else {
+                        Log.i(TAG, "la respuesta es null, enviando showPaymentMethod false")
+                        viewModel.showPaymentMethod.postValue(false)
                     }
+                } catch(toe: SocketTimeoutException) {
+                    Log.e(TAG, "Error de red cargando customer details", toe)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                } catch (ioEx: IOException) {
+                    Log.e(TAG,
+                        "Error de red cargando customer details",
+                        ioEx)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
-            viewModel.deliveryLines.postValue(deliveryLines.toMutableList())
+        }
+    }
+
+    fun fetchPaymentMethods() {
+        fetchData(this::fetchPaymentMethods)
+    }
+
+    private fun fetchPaymentMethods(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
+        if (ex != null) {
+            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban metodos de pago", ex)
+            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+            }
+            return
+        }
+        Log.i(TAG, "loading payment methods...")
+        val dataService: CclDataService? = CclClient.getInstance()?.create(
+            CclDataService::class.java)
+        if (dataService != null && accessToken != null) {
+            doAsync {
+                try {
+                    val call = dataService.getPaymentMethods(
+                        "Bearer $accessToken")
+                        .execute()
+                    val response = call.body()
+                    Log.i(TAG, "respuesta al cargar metodos de pago: ${response}")
+                    if (!response?._embedded?.paymentMethods.isNullOrEmpty()) {
+                        viewModel.paymentMethods.postValue(response?._embedded?.paymentMethods)
+                    }
+                } catch(toe: SocketTimeoutException) {
+                    Log.e(TAG, "Error de red cargando metodos de pago", toe)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                } catch (ioEx: IOException) {
+                    Log.e(TAG,
+                        "Error de red cargando customer details",
+                        ioEx)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                }
+            }
         }
     }
 
@@ -257,25 +382,32 @@ class ManageDeliveryActivity : AppCompatActivity() {
     }
 
     fun changeDeliveryState() {
-        val fragment: DeliveryFormFragment? = ((view_pager2 as ViewPager).adapter as SectionsPagerAdapter).formFragment
+        val fragment = DeliveryFormFragment.getInstance()
             //supportFragmentManager.findFragmentByTag("DeliveryForm") as DeliveryFormFragment?
-        if (fragment != null) {
+        val fragment2 = DeliveryPaymentFragment.getInstance()
+        if (fragment?.isValidForm() == true && (viewModel.showPaymentMethod.value == false ||
+           (viewModel.showPaymentMethod.value == true && fragment2?.isValidForm() == true))) {
             formDataWithoutFiles = fragment.generateFormDataWithoutFiles()
             formDataWithFiles = fragment.generateFormDataWithFiles()
             deliveredItemList = generateDeliveredItemList()
             Log.i(TAG, "form data without files generated: $formDataWithoutFiles")
             Log.i(TAG, "form data with files generated: $formDataWithFiles")
             Log.i(TAG, "item list generated: $deliveredItemList")
-            saveDeliveryStateFormWithoutFiles()
-        } else {
+            if(formDataWithoutFiles != null && deliveredItemList != null) {
+                saveDeliveryStateFormWithoutFiles()
+            } else {
+                Log.e(TAG, "form or item list are null")
+                showAlert("Error", "Los datos de formulario o la lista de items son invalidos")
+            }
+        }/* else {
             Toast.makeText(this, getString(R.string.no_state_form_found), Toast.LENGTH_SHORT).show()
-        }
+        }*/
     }
 
     fun generateDeliveredItemList(): List<DeliveredItemToUpload>? {
-        return viewModel.deliveryLines.value?.map {deliveryLine ->
+        return ManageDeliveryItemsFragment.getInstance()?.filteredData?.map {deliveryLine ->
             DeliveredItemToUpload(
-                quantity = deliveryLine.deliveredQuantity,
+                quantity = deliveryLine.delivered,
                 price = deliveryLine.price,
                 deliveryLineId = deliveryLine.id
             )
@@ -295,6 +427,14 @@ class ManageDeliveryActivity : AppCompatActivity() {
     fun saveDeliveryStateFormWithoutFiles() {
         if (formDataWithoutFiles != null) {
             fetchData(this::saveDeliveryStateFormWithoutFiles)
+        } else {
+            Log.e(TAG, "el formulario sin archivos es invalido")
+        }
+    }
+
+    fun saveDeliveryPaymentMethod() {
+        if (paymentDetails != null) {
+            fetchData(this::saveDeliveryPaymentMethod)
         } else {
             Log.e(TAG, "el formulario sin archivos es invalido")
         }
@@ -335,18 +475,22 @@ class ManageDeliveryActivity : AppCompatActivity() {
         val dataService: CclDataService? = CclClient.getInstance()?.create(
             CclDataService::class.java)
         if (dataService != null && accessToken != null && deliveredItemList != null) {
-            val url = "delivery/addDeliveredItems"
             doAsync {
                 try {
-                    val call = dataService.saveDeliveredItems(url,
+                    val call = dataService.saveDeliveredItems(
                         deliveredItemList,
                         "Bearer $accessToken")
                         .execute()
                     hideLoader()
                     Log.i(TAG, "save delivered items response code ${call.code()}")
                     if (call.code() == 200) {
-                        db?.deliveryLineDao()?.insertAll(viewModel.deliveryLines.value!!)
-                        viewModel.deliveryLines.postValue(viewModel.deliveryLines.value)
+                        //db?.deliveryLineDao()?.insertAll(viewModel.deliveredItems.value!!)
+                        //viewModel.deliveryLines.postValue(viewModel.deliveredItems.value!!)
+                        delivery?.totalDelivered = (delivery?.totalDelivered ?: 0) +
+                        (viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
+                            totalDelivered + deliveryLine.delivered
+                        })  ?: 0)
+                        db?.deliveryDao()?.update(delivery!!)
                         viewModel.delivery.postValue(delivery)
                         savedItems = true
                         showSnackbar(getString(R.string.delivered_items_saved))
@@ -384,9 +528,8 @@ class ManageDeliveryActivity : AppCompatActivity() {
             CclDataService::class.java)
         if (dataService != null && accessToken != null) {
             val urlSaveForm = "delivery/${delivery?.deliveryId}/state-history"
-            val formDataWithoutFiles = formDataWithoutFiles
+            formDataWithoutFiles?.state = viewModel.state.value!!
             doAsync {
-                showSnackbar(getString(R.string.saving_form))
                 try {
                     val callSaveForm = dataService.savePlanificationStateForm(urlSaveForm,
                         this@ManageDeliveryActivity.formDataWithoutFiles!!,
@@ -395,18 +538,27 @@ class ManageDeliveryActivity : AppCompatActivity() {
                         .execute()
                     hideLoader()
                     val responseSaveForm = callSaveForm.body()
-                    Log.i(TAG, "save state form response $responseSaveForm")
+                    Log.i(TAG, "save state form response $responseSaveForm with code ${callSaveForm.code()}")
                     if (responseSaveForm != null) {
                         savedFormId = responseSaveForm
                         if (formDataWithFiles != null  && savedFormId != null) {
                             saveDeliveryStateFormWithFiles()
+                            saveDeliveredItemList()
+                            if (viewModel.showPaymentMethod.value == true) {
+                                val fragment2 = DeliveryPaymentFragment.getInstance()
+                                if (fragment2 != null) {
+                                    paymentDetails = fragment2.generateDeliveryPaymentDetail()
+                                    if (viewModel.showPaymentMethod.value == true && fragment2.isValidForm()) {
+                                        saveDeliveryPaymentMethod()
+                                    }
+                                }
+                            }
+                            delivery?.deliveryState = formDataWithoutFiles?.state
+                            db?.deliveryDao()?.update(delivery!!)
+                            viewModel.delivery.postValue(delivery)
                         } else {
                             Log.e(TAG, "el formulario con archivos o el id del formulario guardado son invalidos")
                         }
-                        saveDeliveredItemList()
-                        delivery?.deliveryState = formDataWithoutFiles?.state
-                        db?.deliveryDao()?.update(delivery!!)
-                        viewModel.delivery.postValue(delivery)
                     }
                 } catch(toe: SocketTimeoutException) {
                     hideLoader()
@@ -423,7 +575,64 @@ class ManageDeliveryActivity : AppCompatActivity() {
         }
     }
 
-    
+    private fun saveDeliveryPaymentMethod(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
+        if (ex != null) {
+            Log.e(TAG, "ocurrio una excepcion mientras se guardaba el metodo de pago", ex)
+            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
+                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+            }
+            return
+        }
+        showLoader()
+        val dataService: CclDataService? = CclClient.getInstance()?.create(
+            CclDataService::class.java)
+        if (dataService != null && accessToken != null) {
+            val urlSaveForm = "paymentDetails"
+            doAsync {
+                showSnackbar(getString(R.string.saving_form))
+                try {
+                    val callSaveForm = dataService.saveDeliveryPaymentDetails(
+                        this@ManageDeliveryActivity.paymentDetails!!,
+                        "Bearer $accessToken")
+                        .execute()
+                    hideLoader()
+                    Log.i(TAG, "save payment details response ${callSaveForm.code()}")
+                    if (callSaveForm.code() == 201) {
+                        paymentDetailsSaved = true
+                    }
+                } catch(toe: SocketTimeoutException) {
+                    hideLoader()
+                    Log.e(TAG, "Network error when saving payment details", toe)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                } catch (ioEx: IOException) {
+                    hideLoader()
+                    Log.e(TAG,
+                        "Network error when saving payment details",
+                        ioEx)
+                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                }
+            }
+        }
+    }
+
+    @kotlin.jvm.Throws(IOException::class)
+    fun getFinalFutureState(): String{
+        val totalDeliveredItems = viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
+            totalDelivered + deliveryLine.delivered
+        })  ?: 0
+        Log.i(TAG, "totalDeliveredItems: $totalDeliveredItems")
+        Log.i(TAG, "filteredData: ${ManageDeliveryItemsFragment.getInstance()?.filteredData}")
+        if (totalDeliveredItems == viewModel.delivery.value?.totalQuantity) {
+            return "Delivered"
+        }
+        if (totalDeliveredItems == 0) {
+            return "UnDelivered"
+        }
+        if (totalDeliveredItems > 0 && totalDeliveredItems < viewModel.delivery.value?.totalQuantity ?: 0) {
+            return "Partial"
+        }
+        throw (IOException("Error: Unknown final state for delivery ${viewModel.delivery.value?.deliveryId}"))
+    }
 
     fun hideLoader() {
         runOnUiThread {
@@ -451,13 +660,65 @@ class ManageDeliveryActivity : AppCompatActivity() {
     }
 
     private fun signOut() {
-        mStateManager?.signOut(this)
-        //finish()
+        if (mStateManager != null && mStateManager?.current != null && mStateManager?.mConfiguration?.redirectUri != null &&
+            mStateManager?.current?.idToken != null && mStateManager?.current?.authorizationServiceConfiguration != null) {
+            val endSessionRequest = EndSessionRequest.Builder(
+                mStateManager?.current?.authorizationServiceConfiguration!!,
+                mStateManager?.current?.idToken!!,
+                mStateManager?.mConfiguration?.redirectUri!!
+            ).build()
+            if (endSessionRequest != null) {
+                val authService = AuthorizationService(this)
+                val endSessionIntent = authService.getEndSessionRequestIntent(endSessionRequest)
+                startActivityForResult(endSessionIntent, AuthStateManager.RC_END_SESSION)
+            } else {
+                showSnackbar("Error al intentar cerrar sesion")
+            }
+        } else {
+            Log.i(TAG,
+                "mStateManager?.mConfiguration?.redirectUri: ${mStateManager?.mConfiguration?.redirectUri}")
+            Log.i(TAG, "mStateManager?.current?.idToken: ${mStateManager?.current?.idToken}")
+            Log.i(TAG,
+                "mStateManager?.current?.authorizationServiceConfiguration: ${mStateManager?.current?.authorizationServiceConfiguration}")
+            showSnackbar("Error al intentar cerrar sesion")
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == AuthStateManager.RC_END_SESSION) {
+            val resp: EndSessionResponse = EndSessionResponse.fromIntent(data!!)!!
+            val ex = AuthorizationException.fromIntent(data)
+            Log.i(TAG, "logout response: $resp")
+            if (resp != null) {
+                if (ex != null) {
+                    Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                    showAlert("Error",
+                        "No se pudo finalizar la sesion",
+                        this::signOut)
+                } else {
+                    mStateManager?.signOut(this)
+                }
+            } else {
+                Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                showAlert("Error",
+                    "No se pudo finalizar la sesion remota",
+                    this::signOut)
+            }
+        }
     }
 
     fun finishActivity(){
-        if(savedFormId != null && savedItems == true && ((!formDataWithFiles.isNullOrEmpty() && filesSaved == true) || formDataWithFiles.isNullOrEmpty())){
-            finish()
+        if(savedFormId != null && savedItems && ((!formDataWithFiles.isNullOrEmpty() && filesSaved) || formDataWithFiles.isNullOrEmpty())){
+            val data = ArrayList<DeliveryLine>()
+            data.addAll(viewModel.deliveryLines.value!!)
+            setResult(RESULT_OK, Intent().putExtra("deliveredLines", data))
+            finishAndRemoveTask()
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        //viewModel.clear() crea un ciclo infinito
     }
 }

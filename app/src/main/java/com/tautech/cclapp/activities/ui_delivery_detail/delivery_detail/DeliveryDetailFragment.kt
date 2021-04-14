@@ -15,6 +15,7 @@ import androidx.lifecycle.Observer
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.DeliveryDetailActivity
 import com.tautech.cclapp.activities.DeliveryDetailActivityViewModel
+import com.tautech.cclapp.classes.CclUtilities
 import kotlinx.android.synthetic.main.fragment_delivery_detail.view.*
 
 class DeliveryDetailFragment : Fragment() {
@@ -42,6 +43,7 @@ class DeliveryDetailFragment : Fragment() {
         "DeliveryPlanned" -> ContextCompat.getColorStateList(requireContext(), R.color.planned_bg)
         else -> ContextCompat.getColorStateList(requireContext(), R.color.created_bg)
       }
+      val utilities = CclUtilities.getInstance()
       root.deliveryNumberTv.text = "#${delivery.deliveryNumber}"
       root.receiverNameTv.text = delivery.receiverName .let {
         if (it.isNullOrEmpty()) {
@@ -51,6 +53,7 @@ class DeliveryDetailFragment : Fragment() {
         }
       }
       root.receiverAddressTv.text = delivery.receiverAddress
+      root.dateTv2.text = delivery.orderDate
       //root.senderNameTv.text = delivery.senderName
       //root.citySenderNameTv.text = delivery.citySenderName
       root.citySenderNameTv.visibility = View.GONE
@@ -60,8 +63,8 @@ class DeliveryDetailFragment : Fragment() {
       root.completedProgressBar.progress = getCompletedDeliveryLinesProgress()
       root.totalItemsChip.text = delivery.totalQuantity.toString()
       root.totalCertifiedItemsChip.text = delivery.totalCertified.toString()
-      root.totalWeightChip.text = "%.2f".format(delivery.totalWeight ?: 0) + " kg"
-      root.totalValueChip.text = "%.2f".format(delivery.totalValue ?: 0) + " $"
+      root.totalWeightChip.text = utilities.formatQuantity(delivery.totalWeight ?: 0.0) + " kg"
+      root.totalValueChip.text = utilities.formatQuantity(delivery.totalValue ?: 0.0) + " $"
       if (activity?.packageManager != null) {
         if (!delivery.receiverAddressLatitude.isNullOrEmpty() && !delivery.receiverAddressLongitude.isNullOrEmpty()) {
           // Create a Uri from an intent string. Use the result to create an Intent.
@@ -100,6 +103,6 @@ class DeliveryDetailFragment : Fragment() {
   }
 
   fun getCompletedDeliveryLinesProgress(): Int {
-    return ((viewModel.deliveryLines.value?.size ?: 0) * 100) / (viewModel.delivery.value?.totalQuantity ?: 1)
+    return ((viewModel.delivery.value?.totalDelivered ?: 0) * 100) / (viewModel.delivery.value?.totalQuantity ?: 1)
   }
 }

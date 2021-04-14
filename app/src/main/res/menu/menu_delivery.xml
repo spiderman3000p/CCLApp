@@ -7,9 +7,6 @@
         android:id="@+id/setAsDelivered"
         android:title="@string/set_as_delivered"/>
     <item
-        android:id="@+id/setAsCancelled"
-        android:title="@string/set_as_cancelled" />
-    <item
         android:id="@+id/setAsUnDelivered"
         android:title="@string/set_as_undelivered" />
 </menu>

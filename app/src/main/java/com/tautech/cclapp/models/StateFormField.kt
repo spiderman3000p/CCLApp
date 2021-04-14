@@ -32,7 +32,7 @@ data class StateFormField(
     @ColumnInfo(name = "id")
     var id: Long? = null,
     @ColumnInfo(name = "formDefinitionId")
-    var formDefinitionId: Int? = null,
+    var formDefinitionId: Long? = null,
     @ColumnInfo(name = "name")
     var name: String? = "",
     @ColumnInfo(name = "controlType")

@@ -8,38 +8,44 @@ import androidx.fragment.app.FragmentPagerAdapter
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.ManageDeliveryItemsFragment
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
+import com.tautech.cclapp.activities.ui_delivery_detail.delivery_payment.DeliveryPaymentFragment
 
 private val TAB_TITLES = arrayOf(
     R.string.form,
-    R.string.items
+    R.string.items,
+    R.string.payment
 )
 
 /**
  * A [FragmentPagerAdapter] that returns a fragment corresponding to
  * one of the sections/tabs/pages.
  */
-class SectionsPagerAdapter(private val context: Context, fm: FragmentManager) :
+class SectionsPagerAdapter(private val context: Context, fm: FragmentManager, private val exceptLastPage: Boolean = false) :
     FragmentPagerAdapter(fm, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT) {
-    var formFragment: DeliveryFormFragment? = null
+    /*var formFragment: DeliveryFormFragment? = null
+    var paymentFragment: DeliveryPaymentFragment? = null
+    init{
+        formFragment = DeliveryFormFragment.getInstance()
+        if (!exceptLastPage) {
+            paymentFragment = DeliveryPaymentFragment.getInstance()
+        }
+    }*/
     override fun getItem(position: Int): Fragment {
         // getItem is called to instantiate the fragment for the given page.
         // Return a PlaceholderFragment (defined as a static inner class below).
         Log.i("SECTIONS_PAGER_ADAPTER", "position: $position")
         val fragment: Fragment? = when(position){
             0 -> {
-                if (formFragment == null){
-                    formFragment = DeliveryFormFragment()
-                }
-                formFragment
+                DeliveryFormFragment.getInstance()
             }
             1 -> {
-                ManageDeliveryItemsFragment(true)
+                ManageDeliveryItemsFragment.getInstance()
+            }
+            2 -> {
+                DeliveryPaymentFragment.getInstance()
             }
             else -> {
-                if (formFragment == null){
-                    formFragment = DeliveryFormFragment()
-                }
-                formFragment
+                DeliveryFormFragment.getInstance()
             }
         }
         return fragment!!
@@ -50,11 +56,8 @@ class SectionsPagerAdapter(private val context: Context, fm: FragmentManager) :
     }
 
     override fun getCount(): Int {
-        // Show 2 total pages.
-        return 2
-    }
-
-    fun getDeliveryFormFragment(): DeliveryFormFragment? {
-        return formFragment
+        val  exceptPages = if (exceptLastPage){ 1 }else{ 0 }
+        return 3 - exceptPages
+        //return 3
     }
 }

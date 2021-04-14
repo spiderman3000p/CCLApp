@@ -1,9 +1,6 @@
 package com.tautech.cclapp.activities.ui_national.scan
 
 import android.content.Context
-import android.content.DialogInterface
-import android.database.sqlite.SQLiteConstraintException
-import android.database.sqlite.SQLiteException
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.util.Log
@@ -12,15 +9,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
-import com.google.gson.Gson
 import com.symbol.emdk.EMDKManager
 import com.symbol.emdk.EMDKManager.FEATURE_TYPE
 import com.symbol.emdk.EMDKResults
@@ -28,24 +22,16 @@ import com.symbol.emdk.barcode.*
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.CertificateActivity
 import com.tautech.cclapp.activities.CertificateActivityViewModel
-import com.tautech.cclapp.activities.KEY_DRIVER_INFO
-import com.tautech.cclapp.activities.KEY_PROFILE_INFO
 import com.tautech.cclapp.adapters.DeliveryLineAdapter
 import com.tautech.cclapp.classes.AuthStateManager
-import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.DeliveryLine
-import com.tautech.cclapp.models.Driver
-import com.tautech.cclapp.models.KeycloakUser
 import com.tautech.cclapp.models.PendingToUploadCertification
 import com.tautech.cclapp.services.CclClient
 import com.tautech.cclapp.services.MyWorkerManagerService
 import kotlinx.android.synthetic.main.fragment_scan.*
-import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthorizationService
 import org.jetbrains.anko.doAsync
-import org.json.JSONException
 
 class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     val TAG = "SCAN_FRAGMENT"
@@ -152,12 +138,13 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
             val results = EMDKManager.getEMDKManager(this.requireContext(), this)
             // Check the return status of getEMDKManager() and update the status TextView accordingly.
             if (results.statusCode != EMDKResults.STATUS_CODE.SUCCESS) {
-                updateStatus("Barcode request failed!")
+                updateStatus("Solicitud de lectura fallida!")
             } else {
-                updateStatus("Barcode reader initialization is in progress...")
+                updateStatus("Inicializacion en progreso...")
             }
         }catch (e: Exception) {
             //updateStatus("Error loading EMDK Manager")
+            Log.e(TAG, "Error loading EMDK Manager")
         }
     }
 
@@ -211,7 +198,7 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
         barcodeManager = emdkManager?.getInstance(FEATURE_TYPE.BARCODE) as BarcodeManager
         // Add external scanner connection listener.
         if (barcodeManager == null) {
-            Toast.makeText(this.context, "Barcode scanning is not supported.", Toast.LENGTH_LONG).show()
+            showSnackbar("Barcode scanning is not supported")
         }
     }
 
@@ -234,11 +221,12 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                     // such as setConfig() or read().
                     scanner?.enable()
                 } catch (e: ScannerException) {
-                    updateStatus(e.message)
+                    Log.e(TAG, "Ocurrio una Excepcion ${e.message}", e)
+                    updateStatus("Ocurrio un error con el lector")
                     deInitScanner()
                 }
             } else {
-                updateStatus("Failed to initialize the scanner device.")
+                updateStatus("La inicializacion del lector ha fallado")
             }
         }
     }
@@ -249,6 +237,7 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                 // Release the scanner
                 scanner?.release()
             } catch (e: Exception) {
+                Log.e(TAG, "Ocurrio un error al inicializar el escaner")
                 updateStatus(e.message)
             }
             scanner = null
@@ -257,18 +246,18 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
 
     override fun onOpened(_emdkManager: EMDKManager?) {
         // Get a reference to EMDKManager
-        emdkManager =  _emdkManager;
+        emdkManager =  _emdkManager
         // Get a  reference to the BarcodeManager feature object
-        initBarcodeManager();
+        initBarcodeManager()
         // Initialize the scanner
-        initScanner();
+        initScanner()
     }
 
     override fun onClosed() {
         // The EMDK closed unexpectedly. Release all the resources.
         emdkManager?.release();
         emdkManager = null;
-        updateStatus("EMDK closed unexpectedly! Please close and restart the application.");
+        updateStatus("Se cerro el escaner inesperadamente. Por favor reinicie la app");
     }
 
     override fun onStatus(statusData: StatusData?): Unit {
@@ -280,7 +269,7 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
         when (state) {
             StatusData.ScannerStates.IDLE -> {
                 // Scanner is idle and ready to change configuration and submit read.
-                statusStr = statusData?.friendlyName + " is   enabled and idle..."
+                statusStr = "Escaner activado y listo para leer..."
                 // Change scanner configuration. This should be done while the scanner is in IDLE state.
                 setConfig()
                 try {
@@ -288,24 +277,25 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
                     //but puts it in a  state in which the scanner can be turned on automatically or by pressing a hardware trigger.
                     scanner?.read()
                 } catch (e: ScannerException) {
-                    updateStatus(e.message);
+                    Log.e(TAG, "Ocurrio una excepcion con el escaner", e)
+                    updateStatus("Ocurrio un error inesperado con el escaner")
                 }
             }
             StatusData.ScannerStates.WAITING -> {
                 // Scanner is waiting for trigger press to scan...
-                statusStr = "Scanner is waiting for trigger press..."
+                statusStr = "Escaner esperando por datos..."
             }
             StatusData.ScannerStates.SCANNING -> {
                 // Scanning is in progress...
-                statusStr = "Scanning..."
+                statusStr = "Escaneando..."
             }
             StatusData.ScannerStates.DISABLED -> {
                 // Scanner is disabled
-                statusStr = statusData?.friendlyName + " is disabled."
+                statusStr = "El escaner esta desactivado"
             }
             StatusData.ScannerStates.ERROR -> {
                 // Error has occurred during scanning
-                statusStr = "An error has occurred."
+                statusStr = "Ha ocurrido un error"
             }
         }
         // Updates TextView with scanner state on UI thread.
@@ -314,26 +304,22 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
 
     override fun onData(scanDataCollection: ScanDataCollection?) {
         // The ScanDataCollection object gives scanning result and the collection of ScanData. Check the data and its status.
-        var dataStr: String = ""
-        var barcodeData: String
+        var barcodeData: String = ""
         if ((scanDataCollection != null) && (scanDataCollection.result == ScannerResults.SUCCESS)) {
-            val scanData: ArrayList<ScanDataCollection.ScanData> =  scanDataCollection.scanData;
+            val scanData: ArrayList<ScanDataCollection.ScanData> = scanDataCollection.scanData;
             // Iterate through scanned data and prepare the data.
-            for (data: ScanDataCollection.ScanData in  scanData) {
+            for (data: ScanDataCollection.ScanData in scanData) {
                 // Get the scanned dataString
-                barcodeData =  data.data;
-                Log.i("DATA_LOADED", barcodeData);
-                // Get the type of label being scanned
-                val labelType: ScanDataCollection.LabelType = data.labelType;
-                // Concatenate barcode data and label type
-                dataStr = "$barcodeData  $labelType";
+                barcodeData = data.data
+                Log.i("DATA_LOADED", barcodeData)
             }
             // limpiamos input
-            barcodeEt.text.clear()
-            // Updates EditText with scanned data and type of label on UI thread.
-            doAsync {
-                searchData(dataStr)
+            activity?.runOnUiThread {
+                barcodeEt.text.clear()
+                barcodeEt.setText(barcodeData)
             }
+            // Updates EditText with scanned data
+            searchData(barcodeData)
         }
     }
 
@@ -375,7 +361,7 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
         Log.i(TAG, "delivery line id readed: $deliveryLineId")
         Log.i(TAG, "index readed: $index")
         // primero buscamos si ya fue escaneado
-        val exists = db?.deliveryLineDao()?.hasBeenCertified(deliveryLineId.toInt(), index)
+        val exists = db?.deliveryLineDao()?.hasBeenCertified(deliveryLineId, index)
         if (exists != null) {
             doAsync {
                 scanExistsBeep?.start()
@@ -470,18 +456,17 @@ class ScanFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListene
             // Set scanner config
             scanner?.config = config
         } catch (e: ScannerException) {
-            updateStatus(e.message)
+            Log.e(TAG, "Error al configurar escaner", e)
+            updateStatus("Ocurrio un error al configurar escaner")
         }
     }
 
     private fun updateStatus(status: String?) {
         Log.i(TAG, status ?: "")
-        activity?.runOnUiThread(Runnable() {
-            run() {
-                // Update the status text view on UI thread with current scanner state
-                scannerStatusTv?.text = "$status";
-            }
-        });
+        activity?.runOnUiThread{
+            // Update the status text view on UI thread with current scanner state
+            scannerStatusTv?.text = status
+        }
     }
 
     override fun onDestroyView() {

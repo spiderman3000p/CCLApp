@@ -1,5 +1,6 @@
 package com.tautech.cclapp.activities
 
+import android.app.PendingIntent
 import android.content.Intent
 import android.database.sqlite.SQLiteConstraintException
 import android.database.sqlite.SQLiteException
@@ -11,7 +12,6 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.SearchView
 import androidx.activity.viewModels
-import androidx.annotation.MainThread
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView.OnQueryTextListener
@@ -28,10 +28,12 @@ import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.Planification
 import com.tautech.cclapp.services.CclClient
-import kotlinx.android.synthetic.main.activity_dashboard.*
 import kotlinx.android.synthetic.main.activity_planifications.*
 import kotlinx.android.synthetic.main.content_scrolling.*
-import net.openid.appauth.*
+import net.openid.appauth.AuthorizationException
+import net.openid.appauth.AuthorizationService
+import net.openid.appauth.EndSessionRequest
+import net.openid.appauth.EndSessionResponse
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.uiThread
 import org.json.JSONException
@@ -68,19 +70,23 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
             showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", true)
             return
         }
-        initData()
-        if (AuthStateManager.keycloakUser == null || AuthStateManager.driverInfo == null) {
-            Log.i(TAG, "keycloakUser ${AuthStateManager.keycloakUser}")
-            Log.i(TAG, "driverInfo ${AuthStateManager.driverInfo}")
+        if (mStateManager?.keycloakUser == null || mStateManager?.driverInfo == null) {
+            Log.i(TAG, "keycloakUser ${mStateManager?.keycloakUser}")
+            Log.i(TAG, "driverInfo ${mStateManager?.driverInfo}")
             showAlert("User Data Error", "Some user data are wrong or empty.", false)
             startActivity(Intent(this, DashboardActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
             finish()
         }
         initAdapter()
         viewModel.planifications.observe(this, Observer{_planifications ->
-            planifications.clear()
-            planifications.addAll(_planifications)
-            mAdapter?.notifyDataSetChanged()
+            if (_planifications.isNullOrEmpty()) {
+                messageTv.text = getText(R.string.no_planifications)
+                messageTv.visibility = View.VISIBLE
+            } else {
+                planifications.clear()
+                planifications.addAll(_planifications)
+                mAdapter?.notifyDataSetChanged()
+            }
             invalidateOptionsMenu()
         })
     }
@@ -90,11 +96,37 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         // user info is retained to survive activity restarts, such as when rotating the
         // device or switching apps. This isn't essential, but it helps provide a less
         // jarring UX when these events occur - data does not just disappear from the view.
-        if (AuthStateManager.keycloakUser != null) {
-            state.putSerializable(KEY_PROFILE_INFO, AuthStateManager.keycloakUser)
+        if (mStateManager?.keycloakUser != null) {
+            state.putSerializable(KEY_PROFILE_INFO, mStateManager?.keycloakUser)
         }
-        if (AuthStateManager.driverInfo != null) {
-            state.putSerializable(KEY_DRIVER_INFO, AuthStateManager.driverInfo)
+        if (mStateManager?.driverInfo != null) {
+            state.putSerializable(KEY_DRIVER_INFO, mStateManager?.driverInfo)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.i(TAG, "on resume...")
+        initData()
+        mStateManager?.revalidateSessionData(this)
+        if (mStateManager?.keycloakUser != null && mStateManager?.driverInfo != null) {
+            if (viewModel.planifications.value.isNullOrEmpty()) {
+                fetchData(this::fetchUserPlanifications)
+            } else {
+                showLoader()
+                doAsync {
+                    val allPlanifications = db?.planificationDao()?.getAllByTypeAndDriver("National", mStateManager?.driverInfo?.id)
+                    val planifications = allPlanifications?.filter{
+                        it.state == "Dispatched" || it.state == "OnGoing"
+                    }
+                    viewModel.planifications.value?.clear()
+                    viewModel.planifications.postValue(planifications?.toMutableList())
+                    Log.i(TAG, "planifications loaded from local DB: $planifications")
+                    hideLoader()
+                }
+            }
+        } else {
+            showAlert("User Data Error", "Some user data are wrong or empty.", true)
         }
     }
 
@@ -113,7 +145,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         idToken: String?,
         ex: AuthorizationException?,
     ) {
-        if (AuthStateManager.driverInfo == null) {
+        if (mStateManager?.driverInfo == null) {
             Log.e(TAG, "El driver es nulo")
             return
         }
@@ -126,7 +158,6 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         if (dataService != null && accessToken != null) {
             doAsync {
                 try {
-                    //val call = dataService.getPlanifications(url, "Bearer $accessToken", AuthStateManager.driverInfo.id).execute()
                     val call = dataService.getPlanifications(url, "Bearer $accessToken").execute()
                     val response = call.body()
                     val allPlanifications = response?._embedded?.planificationVO2s ?: listOf()
@@ -135,17 +166,10 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                     }
                     viewModel.planifications.postValue(planifications.toMutableList())
                     Log.i(TAG, "planification response with retrofit: $planifications")
-                    uiThread {
-                        mAdapter?.notifyDataSetChanged()
-                    }
                     hideLoader()
-                    if (planifications.isEmpty()) {
-                        uiThread {
-                            messageTv.text = getText(R.string.no_planifications)
-                            messageTv.visibility = View.VISIBLE
-                        }
-                    } else {
+                    if (!planifications.isNullOrEmpty()) {
                         try {
+                            db?.planificationDao()?.deleteAllByType("National")
                             db?.planificationDao()?.insertAll(planifications)
                         } catch (ex: SQLiteException) {
                             Log.e(TAG,
@@ -217,8 +241,58 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
     }
 
     private fun signOut() {
-        mStateManager?.signOut(this)
-        //finish()
+        if (mStateManager != null && mStateManager?.current != null && mStateManager?.mConfiguration?.redirectUri != null &&
+            mStateManager?.current?.idToken != null && mStateManager?.current?.authorizationServiceConfiguration != null) {
+            val endSessionRequest = EndSessionRequest.Builder(
+                mStateManager?.current?.authorizationServiceConfiguration!!,
+                mStateManager?.current?.idToken!!,
+                mStateManager?.mConfiguration?.redirectUri!!
+            ).build()
+            if (endSessionRequest != null) {
+                val authService = AuthorizationService(this)
+                val endSessionIntent = authService.getEndSessionRequestIntent(endSessionRequest)
+                startActivityForResult(endSessionIntent, AuthStateManager.RC_END_SESSION)
+            } else {
+                showSnackbar("Error al intentar cerrar sesion")
+            }
+        } else {
+            Log.i(TAG,
+                "mStateManager?.mConfiguration?.redirectUri: ${mStateManager?.mConfiguration?.redirectUri}")
+            Log.i(TAG, "mStateManager?.current?.idToken: ${mStateManager?.current?.idToken}")
+            Log.i(TAG,
+                "mStateManager?.current?.authorizationServiceConfiguration: ${mStateManager?.current?.authorizationServiceConfiguration}")
+            showSnackbar("Error al intentar cerrar sesion")
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == AuthStateManager.RC_END_SESSION) {
+            val resp: EndSessionResponse = EndSessionResponse.fromIntent(data!!)!!
+            val ex = AuthorizationException.fromIntent(data)
+            Log.i(TAG, "logout response: $resp")
+            if (resp != null) {
+                if (ex != null) {
+                    Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                    showAlert("Error",
+                        "No se pudo finalizar la sesion",
+                        true)
+                } else {
+                    mStateManager?.signOut(this)
+                    val mainIntent = Intent(this,
+                        LoginActivity::class.java)
+                    mainIntent.flags =
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(mainIntent)
+                    finish()
+                }
+            } else {
+                Log.e(TAG, "Error al intentar finalizar sesion", ex)
+                showAlert("Error",
+                    "No se pudo finalizar la sesion remota",
+                    true)
+            }
+        }
     }
 
     fun initData() {
@@ -234,105 +308,9 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        Log.i(TAG, "on resume...")
-        initData()
-        mStateManager?.revalidateSessionData(this)
-        if (AuthStateManager.keycloakUser != null && AuthStateManager.driverInfo != null) {
-            if (planifications.isNullOrEmpty()) {
-                fetchData(this::fetchUserPlanifications)
-            } else {
-                showLoader()
-                doAsync {
-                    val allPlanifications = db?.planificationDao()?.getAllByTypeAndDriver("National", mStateManager?.driverInfo?.id)
-                    val planifications = allPlanifications?.filter{
-                        it.state == "Dispatched" || it.state == "OnGoing"
-                    }
-                    viewModel.planifications.value?.clear()
-                    viewModel.planifications.postValue(planifications?.toMutableList())
-                    Log.i(TAG, "planifications loaded from local DB: $planifications")
-                    hideLoader()
-                }
-            }
-        } else {
-            showAlert("User Data Error", "Some user data are wrong or empty.", true)
-        }
-    }
-
-    @MainThread
-    private fun refreshAccessToken() {
-        showLoader()
-        performTokenRequest(
-            mStateManager!!.current.createTokenRefreshRequest()
-        ) { tokenResponse: TokenResponse?, authException: AuthorizationException? ->
-            handleAccessTokenResponse(tokenResponse,
-                authException)
-        }
-    }
-
-    @MainThread
-    private fun exchangeAuthorizationCode(authorizationResponse: AuthorizationResponse) {
-        showLoader()
-        performTokenRequest(
-            authorizationResponse.createTokenExchangeRequest()
-        ) { tokenResponse: TokenResponse?, authException: AuthorizationException? ->
-            handleCodeExchangeResponse(tokenResponse,
-                authException)
-        }
-    }
-
-    @MainThread
-    private fun performTokenRequest(
-        request: TokenRequest,
-        callback: AuthorizationService.TokenResponseCallback,
-    ) {
-        val clientAuthentication: ClientAuthentication
-        clientAuthentication = try {
-            mStateManager!!.current.clientAuthentication
-        } catch (ex: ClientAuthentication.UnsupportedAuthenticationMethod) {
-            Log.d(TAG,
-                "Token request cannot be made, client authentication for the token "
-                        + "endpoint could not be constructed (%s)",
-                ex)
-            Log.e(TAG, "Client authentication method is unsupported")
-            return
-        }
-        mStateManager?.mAuthService!!.performTokenRequest(
-            request,
-            clientAuthentication,
-            callback)
-    }
-
-    @MainThread
-    private fun handleAccessTokenResponse(
-        tokenResponse: TokenResponse?,
-        authException: AuthorizationException?,
-    ) {
-        if (authException != null) {
-            hideLoader()
-            messageTv2.text = "Error loading user data. Touch here to try again"
-            messageTv2.visibility = View.VISIBLE
-            Log.e(TAG, "Exception trying to fetch token", authException)
-        } else {
-            mStateManager!!.updateAfterTokenResponse(tokenResponse, authException)
-        }
-    }
-
-    @MainThread
-    private fun handleCodeExchangeResponse(
-        tokenResponse: TokenResponse?,
-        authException: AuthorizationException?,
-    ) {
-        mStateManager!!.updateAfterTokenResponse(tokenResponse, authException)
-        if (!mStateManager!!.current.isAuthorized) {
-            val message = ("Authorization Code exchange failed "
-                    + if (authException != null) authException.error else "")
-            signOut()
-        }
-    }
-
     override fun onSupportNavigateUp(): Boolean {
+        /*startActivity(Intent(this, DashboardActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK and Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        finish()*/
         onBackPressed()
         return true
     }
@@ -363,7 +341,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                 dialog.show();
                 dialog.setOnDismissListener {
                     if (exitToLogin) {
-                        signOut()
+                        mStateManager?.signOut(this)
                     }
                 }
             }
@@ -399,7 +377,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
     private fun filterPlanifications(query: String?) {
         Log.i(TAG, "filtering planifications")
         val filtered = viewModel.planifications.value?.filter{
-            query == null || it.address?.toLowerCase()?.contains(query) == true || it.dispatchDate?.toLowerCase()?.contains(query) == true ||
+            query == null || it.dispatchDate?.toLowerCase()?.contains(query) == true ||
                     it.label?.toLowerCase()?.contains(query) == true || it.planificationType?.toLowerCase()?.contains(query) == true ||
                     it.state?.toLowerCase()?.contains(query) == true || it.licensePlate?.toLowerCase()?.contains(query) == true
         }!!

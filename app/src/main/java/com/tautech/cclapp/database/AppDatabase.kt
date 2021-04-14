@@ -6,8 +6,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.tautech.cclapp.daos.*
 import com.tautech.cclapp.models.*
-import java.util.*
-import kotlin.math.abs
 
 @Database(entities = [Planification::class, DeliveryLine::class, Delivery::class, Certification::class, PendingToUploadCertification::class, StateFormDefinition::class, StateFormField::class], version = 1)
 abstract class AppDatabase : RoomDatabase() {

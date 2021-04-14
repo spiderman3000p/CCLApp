@@ -26,6 +26,9 @@ interface PlanificationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(planificationCertifications: List<Planification>)
 
+    @Query("DELETE FROM planification WHERE planificationType = :type")
+    fun deleteAllByType(type: String)
+
     @Update
     fun update(planification: Planification)
 

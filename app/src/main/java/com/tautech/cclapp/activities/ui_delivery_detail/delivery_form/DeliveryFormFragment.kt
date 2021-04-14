@@ -30,10 +30,7 @@ import androidx.lifecycle.Observer
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.gms.maps.model.LatLng
 import com.tautech.cclapp.R
-import com.tautech.cclapp.activities.CreateSignatureActivity
-import com.tautech.cclapp.activities.ManageDeliveryActivity
-import com.tautech.cclapp.activities.ManageDeliveryActivityViewModel
-import com.tautech.cclapp.activities.MapsActivity
+import com.tautech.cclapp.activities.*
 import com.tautech.cclapp.classes.AuthStateManager
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.classes.DatePickerFragmentDialog
@@ -42,9 +39,7 @@ import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.*
 import com.tautech.cclapp.services.CclClient
 import kotlinx.android.synthetic.main.fragment_delivery_form.*
-import net.openid.appauth.AppAuthConfiguration
 import net.openid.appauth.AuthorizationException
-import net.openid.appauth.AuthorizationService
 import org.jetbrains.anko.doAsync
 import retrofit2.Retrofit
 import java.io.File
@@ -57,12 +52,13 @@ import kotlin.collections.HashMap
 
 data class FieldValueContainer(
   val field: StateFormField,
-  var fieldValue: Any?
+  var fieldValue: Any?,
+  var viewId: Int?,
+  var dirty: Boolean = false,
 )
 class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
   private val REQUEST_LOCATION_PERMISSION: Int = 2
   private val REQUEST_CAMERA_PERMISSION: Int = 1
-  val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
   val TAG = "DELIVERY_FORM_FRAGMENT"
   val createdControls = HashMap<Int, FieldValueContainer>()
   private var retrofitClient: Retrofit? = null
@@ -100,12 +96,23 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     super.onViewCreated(view, savedInstanceState)
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayHomeAsUpEnabled(true)
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayShowHomeEnabled(true)
+    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     viewModel.stateFormDefinition.observe(viewLifecycleOwner, Observer { definition ->
       Log.i(TAG, "state form definition observada: $definition")
-      if (definition != null) {
-        loadForm(definition, viewModel.delivery.value)
+      Log.i(TAG, "numero de controles dentro del formulario: ${formContainerLayout?.childCount}")
+      if (definition != null/* && createdControls.isNullOrEmpty()*/) {
+        loadForm(definition, viewModel.delivery.value)/*
+      } else if (definition != null && !createdControls.isNullOrEmpty()) {
+        showForm()*/
       } else {
-        showEmptyFormMessage(getString(R.string.no_state_form_found))
+        showEmptyFormMessage(getString(R.string.no_state_form_found_arg, viewModel.state.value))
+        formContainerLayout?.removeAllViews()
+        createdControls.clear()
+      }
+    })
+    viewModel.state.observe(viewLifecycleOwner, Observer {state ->
+      if(state != null) {
+        loadFormDefinitionFromLocalDB()
       }
     })
     swipeRefresh2.setOnRefreshListener {
@@ -126,40 +133,43 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
 
   private fun showEmptyFormMessage(message: String) {
     activity?.runOnUiThread{
-      messageTv3.text = message
-      messageTv3.visibility = View.VISIBLE
+      formContainerLayout?.visibility = View.GONE
+      messageTv3?.text = message
+      messageTv3?.visibility = View.VISIBLE
     }
   }
 
   private fun hideEmptyFormMessage() {
     activity?.runOnUiThread{
-      messageTv3.visibility = View.GONE
+      messageTv3?.visibility = View.GONE
+      formContainerLayout?.visibility = View.VISIBLE
     }
   }
 
   private fun showForm() {
     Log.i(TAG, "mostrando formulario")
     activity?.runOnUiThread{
-      messageTv3.visibility = View.GONE
-      formContainerLayout.visibility = View.VISIBLE
+      messageTv3?.visibility = View.GONE
+      formContainerLayout?.visibility = View.VISIBLE
     }
   }
 
   private fun hideForm() {
     Log.i(TAG, "ocultando formulario")
     activity?.runOnUiThread{
-      formContainerLayout.visibility = View.GONE
+      formContainerLayout?.visibility = View.GONE
     }
   }
 
   private fun loadForm(stateFormDefinition: StateFormDefinition?, delivery: Delivery?){
     Log.i(TAG, "armando formulario...")
     Log.i(TAG, "state form definition a usar para el estado ${delivery?.deliveryState}: ${stateFormDefinition}")
-    formContainerLayout.removeAllViews()
-    if (stateFormDefinition != null) {
+    formContainerLayout?.removeAllViews()
+    if (stateFormDefinition != null && formContainerLayout != null) {
       var counter = formContainerLayout.childCount
       stateFormDefinition.formFieldList?.forEach { field ->
         var preValue: Any? = null
+        var viewId: Int? = null
         Log.i(TAG, "armando form control para ${field.name}")
         when (field.controlType) {
           ControlType.File.value -> {
@@ -244,7 +254,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               else -> Log.e(TAG,
                 "No se encontro el subtipo ${field.subtype} del campo ${field.label}")
             }
-            requestCode = formContainerLayout.childCount
+            requestCode = formContainerLayout?.childCount
             (viewAux.getChildAt(2) as ImageButton).setOnClickListener { view ->
               if (intent != null) {
                 if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED) {
@@ -256,20 +266,24 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                       REQUEST_CAMERA_PERMISSION)
                   }
                 } else {
-                  startActivityForResult(intent, requestCode)
+                  startActivityForResult(intent, requestCode!!)
                 }
               } else {
                 showMessage(getString(R.string.no_action_provided))
               }
             }
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.Checkbox.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.Checkbox.value}")
             val viewAux =
               View.inflate(requireContext(), R.layout.checkbox_control_layout, null) as CheckBox
             viewAux.text = "${field.label} ${if(field.required == true) "*" else "" }"
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.Input.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.Input.value}")
@@ -291,7 +305,9 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               }
             }
             (viewAux.getChildAt(0) as TextView).text = "${field.label} ${if(field.required == true) "*" else "" }"
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.Location.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.Location.value}")
@@ -310,7 +326,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               requireContext().getColor(
                 R.color.black))
             (viewAux.getChildAt(0) as TextView).text = "${field.label} ${if(field.required == true) "*" else "" }"
-            val requestCode = formContainerLayout.childCount
+            val requestCode = formContainerLayout?.childCount
             (viewAux.getChildAt(2) as ImageButton).setOnClickListener {
               // TODO: abrir mapa con la posicion del movil
               val intent = Intent(requireContext(), MapsActivity::class.java)
@@ -323,10 +339,12 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                     REQUEST_LOCATION_PERMISSION)
                 }
               } else {
-                startActivityForResult(intent, requestCode)
+                startActivityForResult(intent, requestCode!!)
               }
             }
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.RadioGroup.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.RadioGroup.value}")
@@ -346,11 +364,14 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                   val radioItem = RadioButton(requireContext())
                   radioItem.text = item.getString("label")
                   radioItem.tag = item.get("value")
+                  viewAux.id = View.generateViewId()
                   viewAux.addView(radioItem)
                 }
               }
             }
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.Select.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.Select.value}")
@@ -374,7 +395,9 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               itemsMutableList
             )
             (viewAux.getChildAt(1) as Spinner).adapter = spinnerAdapter
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.Toggle.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.Toggle.value}")
@@ -382,7 +405,9 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               R.layout.toggle_control_layout,
               null) as SwitchCompat
             viewAux.text = "${field.label} ${if(field.required == true) "*" else "" }"
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           ControlType.Date.value -> {
             Log.i(TAG, "control ${field.name} es de tipo ${ControlType.Date.value}")
@@ -398,14 +423,16 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               ContextCompat.getDrawable(requireContext(),
                 R.drawable.ic_calendar___1194_),
               null)
-            val index = formContainerLayout.childCount
+            val index = formContainerLayout?.childCount
             (viewAux.getChildAt(1) as EditText).setOnClickListener { view ->
-              val dialog = DatePickerFragmentDialog(index)
-              dialog.setTargetFragment(this, index)
+              val dialog = DatePickerFragmentDialog(index!!)
+              dialog.setTargetFragment(this, index!!)
               Log.i(TAG, "abriendo datepicker, envio indice $index")
               dialog.show(requireFragmentManager(), "datePicker")
             }
-            formContainerLayout.addView(viewAux)
+            viewAux.id = View.generateViewId()
+            viewId = viewAux.id
+            formContainerLayout?.addView(viewAux)
           }
           else -> {
             Log.e(TAG, "No se encontro un control para el campo ${field.name}")
@@ -414,7 +441,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
         val childCount = formContainerLayout.childCount
         if (childCount > counter) {
           Log.i(TAG, "preValue es $preValue")
-          createdControls.put(counter, FieldValueContainer(field, preValue))
+          createdControls.put(counter, FieldValueContainer(field, preValue, viewId))
           counter++
           Log.i(TAG, "control ${field.label} agregado satisfactoriamente")
         } else {
@@ -422,7 +449,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
         }
       }
       Log.i(TAG,
-        "formulario creado tiene ${formContainerLayout.childCount}/${stateFormDefinition.formFieldList?.size} campos")
+        "formulario creado tiene ${formContainerLayout?.childCount}/${stateFormDefinition.formFieldList?.size} campos")
       showForm()
     } else {
       Log.e(TAG, "state form definition NO econtrada para el state ${delivery?.deliveryState}")
@@ -471,11 +498,13 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           Log.i(TAG,
             "obteniendo fecha seleccionada: $selectedDate en el view con index ${controlContainer.key}...")
           // set the value of the editText
-          if (formContainerLayout.getChildAt(controlContainer.key) != null) {
-            ((formContainerLayout.getChildAt(controlContainer.key) as LinearLayout).getChildAt(
+          if (formContainerLayout?.getChildAt(controlContainer.key) != null) {
+            ((formContainerLayout?.getChildAt(controlContainer.key) as LinearLayout).getChildAt(
               1) as EditText).setText(
               selectedDate)
+            ((formContainerLayout?.getChildAt(controlContainer.key) as LinearLayout).getChildAt(1) as EditText).error = null
             controlContainer.value.fieldValue = selectedDate
+            controlContainer.value.dirty = true
           } else {
             Log.e(TAG, "La vista en el indice ${controlContainer.key} es nula")
           }
@@ -492,8 +521,11 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                   val file = File(uri.path!!)
                   if(file != null) {
                     Log.i(TAG, "document file exists in: ${file.absolutePath}")
+                    ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                      1) as TextView).error = null
                     controlContainer.value.fieldValue = file
-                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                    controlContainer.value.dirty = true
+                    ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                       3) as ImageButton).setOnClickListener {
                       val intent = Intent()
                       intent.action = Intent.ACTION_VIEW
@@ -502,10 +534,10 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                       intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                       startActivity(intent)
                     }
-                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                    ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                       3) as ImageButton).visibility = View.VISIBLE
                     Log.i(TAG, "documento seleccionado: ${file.name}")
-                    ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                    ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                       1) as TextView).text = file.name
                   } else {
                     Log.e(TAG, "document doesnt exists")
@@ -532,26 +564,29 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                     null
                   }
                   signatureFile.also {
-                    try {
-                      FileOutputStream(it).use { out ->
-                        bmp.compress(Bitmap.CompressFormat.PNG,
-                          100,
-                          out)
+                    if (it != null) {
+                      try {
+                        FileOutputStream(it).use { out ->
+                          bmp.compress(Bitmap.CompressFormat.PNG,
+                            100,
+                            out)
+                        }
+                        ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                          4) as ImageView).setImageBitmap(
+                          bmp)
+                        controlContainer.value.fieldValue = signatureFile
+                        controlContainer.value.dirty = true
+                        ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                          4) as ImageView).visibility =
+                          View.VISIBLE
+                        Log.i(TAG,
+                          "obteniendo firma, ancho: ${bmp.width}, index: ${controlContainer.key}...")
+                      } catch (e: IOException) {
+                        Log.e(TAG, "Error ocurred while filling the image file", e)
+                        e.printStackTrace()
                       }
-                    } catch (e: IOException) {
-                      Log.e(TAG, "Error ocurred while filling the image file", e)
-                      e.printStackTrace()
                     }
                   }
-                  ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                    4) as ImageView).setImageBitmap(
-                    bmp)
-                  controlContainer.value.fieldValue = signatureFile
-                  ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
-                    4) as ImageView).visibility =
-                    View.VISIBLE
-                  Log.i(TAG,
-                    "obteniendo firma, ancho: ${bmp.width}, index: ${controlContainer.key}...")
                 }
               }
             }
@@ -568,33 +603,12 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                         "com.tautech.cclapp.fileprovider",
                         file
                       )
-                      /*val byteArray = file.readBytes()
-                      val bmp = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
-                      if (bmp != null) {
-                        file.also {
-                          try {
-                            FileOutputStream(it).use { out ->
-                              if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                bmp.compress(Bitmap.CompressFormat.WEBP_LOSSLESS,
-                                  100,
-                                  out)
-                              } else {
-                                bmp.compress(Bitmap.CompressFormat.PNG,
-                                  100,
-                                  out)
-                              }
-                            }
-                            Log.i(TAG, "photo file: ${file.absolutePath} after compression ${file.length() / 1024}kb")
-                            this.value.fieldValue = file
-                          } catch (e: IOException) {
-                            Log.e(TAG, "Error ocurred while filling the image file", e)
-                            e.printStackTrace()
-                          }
-                        }
-                      }*/
-                      ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                      controlContainer.value.dirty = true
+                      ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                        1) as TextView).error = null
+                      ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                         3) as ImageButton).visibility = View.VISIBLE
-                      ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                      ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                         3) as ImageButton).setOnClickListener {
                         val intent = Intent()
                         intent.action = Intent.ACTION_VIEW
@@ -606,7 +620,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                     }
                   }
                 }
-                    } catch (e: Exception) {
+              } catch (e: Exception) {
                 Log.e(TAG, "Excepcion:", e)
               }
             }
@@ -619,11 +633,14 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               "ubicacion seleccionada: $selectedLocation")
             // set the value of the editText
             if (selectedLocation != null) {
-              if (formContainerLayout.getChildAt(controlContainer.key) != null) {
-                ((formContainerLayout.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+              if (formContainerLayout?.getChildAt(controlContainer.key) != null) {
+                ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
                   1) as TextView).setText(
                   selectedLocation.toString())
+                ((formContainerLayout?.getChildAt(controlContainer.key) as ConstraintLayout).getChildAt(
+                  1) as TextView).error = null
                 controlContainer.value.fieldValue = "${selectedLocation.latitude},${selectedLocation.longitude}"
+                controlContainer.value.dirty = true
               } else {
                 Log.e(TAG, "La vista en el indice ${controlContainer.key} es nula")
               }
@@ -647,10 +664,10 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     //var isValid = true
     createdControls.forEach { (key, valueContainer) ->
       Log.i(TAG, "validando control $key:${valueContainer}...")
-      if (valueContainer.field.required == true && formContainerLayout.getChildAt(key) != null) {
+      if (valueContainer.field.required == true && formContainerLayout?.getChildAt(key) != null) {
         Log.i(TAG, "control $key:${valueContainer.field.name} es requerido")
         if (valueContainer.field.controlType == ControlType.Input.value) {
-          val input = (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
+          val input = (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
           if (input.text.isNullOrEmpty()) {
             input.setError(getString(R.string.required_field))
             showMessage(getString(R.string.required_field_arg, valueContainer.field.label))
@@ -661,27 +678,22 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           }
         }
         if (valueContainer.field.controlType == ControlType.RadioGroup.value) {
-          val lastChild = (formContainerLayout.getChildAt(key) as RadioGroup).childCount - 1
-          if ((formContainerLayout.getChildAt(key) as RadioGroup).checkedRadioButtonId == -1) {
-            ((formContainerLayout.getChildAt(key) as RadioGroup).getChildAt(lastChild) as RadioButton).setError(
+          val lastChild = (formContainerLayout?.getChildAt(key) as RadioGroup).childCount - 1
+          if ((formContainerLayout?.getChildAt(key) as RadioGroup).checkedRadioButtonId == -1) {
+            ((formContainerLayout?.getChildAt(key) as RadioGroup).getChildAt(lastChild) as RadioButton).setError(
               getString(R.string.required_field))
             showMessage(getString(R.string.required_field_arg, valueContainer.field.label))
             //isValid = false
             //return@forEach
             return false
           } else {
-            ((formContainerLayout.getChildAt(key) as RadioGroup).getChildAt(lastChild) as RadioButton).error =
+            ((formContainerLayout?.getChildAt(key) as RadioGroup).getChildAt(lastChild) as RadioButton).error =
               null
           }
         }
-        /*if (valueContainer.field.controlType == ControlType.Toggle.value &&
-          ((formContainerLayout.getChildAt(key) as SwitchCompat).isChecked)){
-          isValid = false
-          return@forEach
-        }*/
         if (valueContainer.field.controlType == ControlType.Select.value) {
           val spinner =
-            (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as Spinner
+            (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as Spinner
           if (spinner.selectedItem == null) {
             spinner.requestFocus()
             showMessage(getString(R.string.required_field_arg, valueContainer.field.label))
@@ -690,41 +702,36 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             return false
           }
         }
-        /*if (valueContainer.field.controlType == ControlType.Checkbox.value &&
-          ((formContainerLayout.getChildAt(key) as CheckBox).isChecked)){
-          isValid = false
-          return@forEach
-        }*/
         if (valueContainer.field.controlType == ControlType.Location.value && valueContainer.fieldValue == null){
           //isValid = false
-          ((formContainerLayout.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).error = getString(R.string.required_field_arg, valueContainer.field.label)
-          ((formContainerLayout.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).requestFocus()
+          ((formContainerLayout?.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).error = getString(R.string.required_field_arg, valueContainer.field.label)
+          ((formContainerLayout?.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).requestFocus()
           showMessage(getString(R.string.required_field_arg, valueContainer.field.label))
           //return@forEach
           return false
         }
-        if (valueContainer.field.controlType == ControlType.File.value && valueContainer.fieldValue == null){
+        if (valueContainer.field.controlType == ControlType.File.value && (valueContainer.fieldValue == null || !valueContainer.dirty)){
           //isValid = false
-          ((formContainerLayout.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).error = getString(R.string.required_field_arg, valueContainer.field.label)
-          ((formContainerLayout.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).requestFocus()
+          ((formContainerLayout?.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).error = getString(R.string.required_field_arg, valueContainer.field.label)
+          ((formContainerLayout?.getChildAt(key) as ConstraintLayout).getChildAt(1) as TextView).requestFocus()
           showMessage(getString(R.string.required_field_arg, valueContainer.field.label))
           //return@forEach
           return false
         }
         if (valueContainer.field.controlType == ControlType.Date.value && valueContainer.fieldValue == null){
           //isValid = false
-          ((formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as TextView).error = getString(R.string.required_field_arg, valueContainer.field.label)
-          ((formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as TextView).requestFocus()
+          ((formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as TextView).error = getString(R.string.required_field_arg, valueContainer.field.label)
+          ((formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as TextView).requestFocus()
           showMessage(getString(R.string.required_field_arg, valueContainer.field.label))
           //return@forEach
           return false
         }
       }
-      if (valueContainer.field.max != null && formContainerLayout.getChildAt(key) != null) {
+      if (valueContainer.field.max != null && formContainerLayout?.getChildAt(key) != null) {
         Log.i(TAG, "control $key:${valueContainer.field.name} tiene un limite maximo de ${valueContainer.field.max}")
         if (valueContainer.field.controlType == ControlType.Input.value) {
           val input =
-            (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
+            (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
           if (!input.text.isNullOrEmpty() &&
             (valueContainer.field.type == FieldType.Text.value && input.text.length > valueContainer.field.max!!) ||
             (valueContainer.field.type == FieldType.Decimal.value && !input.text.isNullOrEmpty() && input.text.toString()
@@ -746,11 +753,11 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           }
         }
       }
-      if (valueContainer.field.min != null && formContainerLayout.getChildAt(key) != null) {
+      if (valueContainer.field.min != null && formContainerLayout?.getChildAt(key) != null) {
         Log.i(TAG, "control $key:${valueContainer.field.name} tiene un limite minimo de ${valueContainer.field.min}")
         if (valueContainer.field.controlType == ControlType.Input.value) {
           val input =
-            (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
+            (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
           if (!input.text.isNullOrEmpty() &&
             (valueContainer.field.type == FieldType.Text.value && input.text.length < valueContainer.field.min!!) ||
             (valueContainer.field.type == FieldType.Decimal.value && !input.text.isNullOrEmpty() && input.text.toString()
@@ -771,11 +778,11 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           }
         }
       }
-      if (!valueContainer.field.regex.isNullOrEmpty() && formContainerLayout.getChildAt(key) != null) {
+      if (!valueContainer.field.regex.isNullOrEmpty() && formContainerLayout?.getChildAt(key) != null) {
         Log.i(TAG, "control $key:${valueContainer.field.name} tiene un regex de ${valueContainer.field.regex}")
         if (valueContainer.field.controlType == ControlType.Input.value) {
           val input =
-            (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
+            (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
           if (!input.text.isNullOrEmpty() &&
             valueContainer.field.type == FieldType.Text.value && Regex(valueContainer.field.regex!!).matches(input.text)
           ) {
@@ -793,16 +800,36 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     return true
   }
 
+  @kotlin.jvm.Throws(IOException::class)
+  fun getFinalFutureState(): String{
+    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
+    val totalDeliveredItems = viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
+      totalDelivered + deliveryLine.delivered
+    })  ?: 0
+    Log.i(TAG, "totalDeliveredItems: $totalDeliveredItems")
+    Log.i(TAG, "filteredData: ${ManageDeliveryItemsFragment.getInstance()?.filteredData}")
+    if (totalDeliveredItems == viewModel.delivery.value?.totalQuantity) {
+      return "Delivered"
+    }
+    if (totalDeliveredItems == 0) {
+      return "UnDelivered"
+    }
+    if (totalDeliveredItems > 0 && totalDeliveredItems < viewModel.delivery.value?.totalQuantity ?: 0) {
+      return "Partial"
+    }
+    throw (IOException("Error: Unknown final state for delivery ${viewModel.delivery.value?.deliveryId}"))
+  }
+
   fun generateFormDataWithoutFiles(): StateForm? {
     var stateForm: StateForm? = null
     try {
       stateForm = StateForm(null, getFinalFutureState())
       stateForm.data = arrayListOf()
       createdControls.forEach { (key, valueContainer) ->
-        if (formContainerLayout.getChildAt(key) != null) {
+        if (formContainerLayout?.getChildAt(key) != null) {
           if (valueContainer.field.controlType == ControlType.Input.value) {
             val input =
-              (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
+              (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as EditText
             val inputVal = input.text.toString()
             val value: Any = when (valueContainer.field.type) {
               FieldType.Text.value -> inputVal
@@ -813,7 +840,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             stateForm.data?.add(Item(valueContainer.field.name ?: "", value))
           }
           if (valueContainer.field.controlType == ControlType.RadioGroup.value) {
-            val input = formContainerLayout.getChildAt(key) as RadioGroup
+            val input = formContainerLayout?.getChildAt(key) as RadioGroup
             if (input.checkedRadioButtonId > -1) {
               val checkedVal = input.findViewById<RadioButton>(input.checkedRadioButtonId).tag
               if (checkedVal != null) {
@@ -822,13 +849,13 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             }
           }
           if (valueContainer.field.controlType == ControlType.Toggle.value) {
-            val input = formContainerLayout.getChildAt(key) as SwitchCompat
+            val input = formContainerLayout?.getChildAt(key) as SwitchCompat
             val value = input.isChecked
             stateForm.data?.add(Item(valueContainer.field.name ?: "", value))
           }
           if (valueContainer.field.controlType == ControlType.Select.value) {
             val select =
-              (formContainerLayout.getChildAt(key) as LinearLayout).getChildAt(1) as Spinner
+              (formContainerLayout?.getChildAt(key) as LinearLayout).getChildAt(1) as Spinner
             val selectedPos = select.selectedItemPosition
             val selectedVal =
               valueContainer.field.itemList?.getJSONObject(selectedPos)?.get("value")
@@ -839,7 +866,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             }
           }
           if (valueContainer.field.controlType == ControlType.Checkbox.value) {
-            val value = (formContainerLayout.getChildAt(key) as CheckBox).isChecked
+            val value = (formContainerLayout?.getChildAt(key) as CheckBox).isChecked
             stateForm.data?.add(Item(valueContainer.field.name ?: "", value))
           }
           if (valueContainer.field.controlType == ControlType.Location.value || valueContainer.field.controlType == ControlType.Date.value) {
@@ -859,7 +886,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
   fun generateFormDataWithFiles(): ArrayList<Item> {
     val items: ArrayList<Item> = arrayListOf()
     createdControls.forEach { (key, valueContainer) ->
-      if (formContainerLayout.getChildAt(key) != null) {
+      if (formContainerLayout?.getChildAt(key) != null) {
         if (valueContainer.field.controlType == ControlType.File.value) {
           Log.i(TAG, "archivo encontrado para ${valueContainer.field.label}")
           val value = valueContainer.fieldValue
@@ -901,25 +928,6 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     return items
   }
 
-  @kotlin.jvm.Throws(IOException::class)
-  fun getFinalFutureState(): String{
-    val totalDeliveredItems = viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
-      totalDelivered + deliveryLine.deliveredQuantity
-    })
-    if (totalDeliveredItems != null) {
-      if (totalDeliveredItems == viewModel.delivery.value?.totalQuantity) {
-        return "Delivered"
-      }
-      if (totalDeliveredItems == 0) {
-        return "UnDelivered"
-      }
-      if (totalDeliveredItems > 0 && totalDeliveredItems < viewModel.delivery.value?.totalQuantity ?: 0) {
-        return "Partial"
-      }
-    }
-    throw (IOException("Error: Unknown final state for delivery ${viewModel.delivery.value?.deliveryId}"))
-  }
-
   override fun onRefresh() {
     Log.i(TAG, "onRefresh()...")
     //loadStateFormDefinitions()
@@ -937,6 +945,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
       }
       return
     }
+    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     Log.i(TAG, "loading form definitions...")
     //https://{{hostname}}/stateFormDefinitions/search/findByCustomerId?customerId=2
     //val url = "stateFormDefinitions/search/findByCustomerId?customerId=${viewModel.planification.value?.customerId}"
@@ -957,34 +966,23 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           if (response != null && response.size > 0) {
             try {
               Log.i(TAG, "guardando en DB local definiciones en la BD local")
+              if(viewModel.planification.value?.customerId != null) {
+                db?.stateFormDefinitionDao()
+                  ?.deleteAllByCustomer(viewModel.planification.value?.customerId!!)
+              }
               db?.stateFormDefinitionDao()?.insertAll(response)
-              response.flatMap { def ->
-                def.formFieldList?.forEach {field ->
-                  field.formDefinitionId = def.id?.toInt()
+              val allFields = response.flatMap { def ->
+                def.formFieldList?.forEach { field ->
+                  field.formDefinitionId = def.id
                 }
                 def.formFieldList ?: listOf()
-              }.also {allFields ->
-                if(allFields.isNotEmpty()) {
-                  db?.stateFormFieldDao()?.insertAll(allFields)
-                }
               }
-              if (viewModel.state.value != null) {
-                Log.i(TAG,
-                  "buscando definiciones en la BD local para el estado ${viewModel.state.value}...")
-                val foundStateFormDefinition = db?.stateFormDefinitionDao()
-                  ?.getAllByStateAndCustomer(viewModel.state.value!!,
-                    viewModel.planification.value?.customerId?.toInt()!!)
-                if (foundStateFormDefinition != null) {
-                  Log.i(TAG, "found state form definition: $foundStateFormDefinition")
-                  foundStateFormDefinition.formFieldList =
-                    db?.stateFormDefinitionDao()?.getFields(foundStateFormDefinition.id!!.toInt())
-                  Log.i(TAG, "found fieldList: ${foundStateFormDefinition.formFieldList}")
-                  viewModel.stateFormDefinition.postValue(foundStateFormDefinition)
-                } else {
-                  Log.e(TAG,
-                    "form definitions not found for state ${viewModel.state.value} and customer ${viewModel.planification.value?.customerId?.toInt()}")
-                }
+              db?.stateFormFieldDao()?.deleteAll()
+              if(!allFields.isNullOrEmpty()) {
+                Log.i(TAG, "guardando en la BD local los items de formulario: $allFields")
+                db?.stateFormFieldDao()?.insertAll(allFields)
               }
+              loadFormDefinitionFromLocalDB()
             } catch (ex: SQLiteException) {
               Log.e(TAG,
                 "Error guardando state form definitions en la BD local",
@@ -1005,7 +1003,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                 getString(R.string.database_error_saving_state_form_definitions))
             }
           } else {
-            showEmptyFormMessage(getString(R.string.empty_form_message))
+            showEmptyFormMessage(getString(R.string.forms_not_found_message))
           }
         } catch(toe: SocketTimeoutException) {
           swipeRefresh2.isRefreshing = false
@@ -1017,6 +1015,31 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             "Error de red cargando state form definitions",
             ioEx)
           showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+        }
+      }
+    }
+  }
+
+  private fun loadFormDefinitionFromLocalDB(){
+    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
+    if (viewModel.state.value != null) {
+      Log.i(TAG,
+        "buscando definiciones en la BD local para el estado ${viewModel.state.value}...")
+      doAsync {
+        val foundStateFormDefinition = db?.stateFormDefinitionDao()
+          ?.getAllByStateAndCustomer(viewModel.state.value!!,
+            viewModel.planification.value?.customerId!!)
+        if (!foundStateFormDefinition.isNullOrEmpty()) {
+          hideEmptyFormMessage()
+          Log.i(TAG, "found state form definition: $foundStateFormDefinition")
+          foundStateFormDefinition[0].formFieldList =
+            db?.stateFormDefinitionDao()?.getFields(foundStateFormDefinition[0].id!!)
+          Log.i(TAG, "found fieldList: ${foundStateFormDefinition[0].formFieldList}")
+          viewModel.stateFormDefinition.postValue(foundStateFormDefinition[0])
+        } else {
+          Log.e(TAG,
+            "form definitions not found for state ${viewModel.state.value} and customer ${viewModel.planification.value?.customerId}")
+          viewModel.stateFormDefinition.postValue(null)
         }
       }
     }
@@ -1073,28 +1096,64 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
   }
 
   override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_CAMERA_PERMISSION) {
-            if (grantResults.any {
-                    it == PackageManager.PERMISSION_DENIED
-                }){
-              showAlert(getString(R.string.important),
-                  getString(R.string.should_show_rationale_camera_permission_message))
-            }
-        }
-        if (requestCode == REQUEST_LOCATION_PERMISSION) {
-          if (grantResults.any {
-              it == PackageManager.PERMISSION_DENIED
+    requestCode: Int,
+    permissions: Array<out String>,
+    grantResults: IntArray
+  ){
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    if (requestCode == REQUEST_CAMERA_PERMISSION) {
+        if (grantResults.any {
+                it == PackageManager.PERMISSION_DENIED
             }){
-            if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
-              showAlert(getString(R.string.important),
-                getString(R.string.should_show_rationale_location_permission_message))
-            }
-          }
+          showAlert(getString(R.string.important),
+              getString(R.string.should_show_rationale_camera_permission_message))
         }
     }
+    if (requestCode == REQUEST_LOCATION_PERMISSION) {
+      if (grantResults.any {
+          it == PackageManager.PERMISSION_DENIED
+        }){
+        if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
+          showAlert(getString(R.string.important),
+            getString(R.string.should_show_rationale_location_permission_message))
+        }
+      }
+    }
+  }
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    Log.i(TAG, "onSaveInstanceState()...")
+  }
+
+  override fun onPause() {
+    super.onPause()
+    Log.i(TAG, "onPause()...")
+  }
+
+  override fun onStop() {
+    super.onStop()
+    Log.i(TAG, "onStop()...")
+    //guardamos los valores del formulario
+    createdControls.forEach { (key, valueContainer) ->
+      //activity?.findViewById(valueContainer.viewId!!)
+    }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    Log.i(TAG, "onResume()...")
+    //restauramos los valores del formulario
+  }
+
+  companion object{
+    var mInstance: DeliveryFormFragment? = null
+    fun getInstance(): DeliveryFormFragment?{
+      if(mInstance == null){
+        Log.i("DELIVERY_FORM_FRAGMENT", "instancia de DeliveryFormFragment es null, creando una nueva")
+        mInstance = DeliveryFormFragment()
+      }
+      return mInstance
+    }
+  }
 }

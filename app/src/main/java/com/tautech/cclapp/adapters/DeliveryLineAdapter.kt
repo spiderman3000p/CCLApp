@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.tautech.cclapp.R
 import com.tautech.cclapp.models.DeliveryLine
-import com.tautech.cclapp.models.PlanificationLine
 import kotlinx.android.synthetic.main.last_readed_item.view.*
 import java.util.*
 
@@ -15,7 +14,7 @@ class DeliveryLineAdapter(private val dataList: MutableList<DeliveryLine>, val c
     RecyclerView.Adapter<DeliveryLineAdapter.MyViewHolder>() {
 
     class MyViewHolder(val itemView: View, val readed: Boolean): RecyclerView.ViewHolder(itemView) {
-        fun bindItems(deliveryLine: DeliveryLine, delivery: PlanificationLine? = null) {
+        fun bindItems(deliveryLine: DeliveryLine) {
             itemView.skuDescriptionTv .text = deliveryLine.description
             itemView.deliveryBtn.text = "Delivery ${deliveryLine.deliveryId}"
             itemView.referenceTv.text = deliveryLine.reference

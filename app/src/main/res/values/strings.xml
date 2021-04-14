@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">CCLApp</string>
+    <string name="app_name">CCL-DRV</string>
     <string name="title_scan">Escanear</string>
     <string name="title_scanned">Escaneados</string>
     <string name="title_resume">Resumen</string>
@@ -59,6 +59,8 @@
     <string name="input_text_hint">Ingrese su texto…</string>
     <string name="database_error_saving_state_form_definitions">Error al guardar definicion de formulario en la BD</string>
     <string name="no_state_form_found">No se encontro un formulario para el estado seleccionado</string>
+    <string name="forms_not_found_message">No se encontraron formularios registrados</string>
+    <string name="no_state_form_found_arg">No se encontro un formulario para el estado %1$s</string>
     <string name="title_activity_create_signature">Ingrese Firma</string>
     <string name="clear">Limpiar</string>
     <string name="done">Hecho</string>
@@ -102,6 +104,9 @@
         <item>Entregar</item>
         <item>No Entregar</item>
     </string-array>
+    <string-array name="delivery_states_actions_undelivered">
+        <item>Entregar</item>
+    </string-array>
     <!-- Strings used for fragments for navigation -->
 
     <string name="important">Important</string>
@@ -129,4 +134,22 @@
     <string name="delivered">Delivered</string>
     <string name="database_error_saving_delivery_lines">Error al guardar lineas del delivery</string>
     <string name="selected_document_error">Error con el documento seleccionado</string>
+    <string name="title_activity_root">RootActivity</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="nav_header_title">Android Studio</string>
+    <string name="nav_header_subtitle">android.studio@android.com</string>
+    <string name="nav_header_desc">Navigation header</string>
+    <string name="action_settings">Settings</string>
+
+    <string name="menu_home">Home</string>
+    <string name="menu_gallery">Gallery</string>
+    <string name="menu_slideshow">Slideshow</string>
+    <string name="payment">Pago</string>
+    <string name="total_load_value">Total valor de la carga</string>
+    <string name="total_value_delivered">Total valor entregado</string>
+    <string name="total_difference">Total diferencia</string>
+    <string name="total_devolutions_label">Total valor devuelto</string>
+    <string name="preview_dialog_msg">Por favor, verifica que las cantidades y montos esten correctos antes de finalizar esta ruta</string>
+    <string name="undelivered_total">Total no entregado</string>
 </resources>

@@ -13,8 +13,6 @@ import com.tautech.cclapp.models.Certification
 import com.tautech.cclapp.models.CertificationToUpload
 import com.tautech.cclapp.models.PendingToUploadCertification
 import com.tautech.cclapp.services.CclClient
-import net.openid.appauth.AppAuthConfiguration
-import net.openid.appauth.AuthorizationService
 import retrofit2.Retrofit
 import java.io.IOException
 import java.net.SocketTimeoutException

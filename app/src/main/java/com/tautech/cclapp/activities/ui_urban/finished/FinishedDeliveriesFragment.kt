@@ -7,7 +7,6 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -23,9 +22,7 @@ import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
 import com.tautech.cclapp.adapters.PlanificationLineAdapter
 import com.tautech.cclapp.models.Delivery
-import com.tautech.cclapp.models.PlanificationLine
 import kotlinx.android.synthetic.main.fragment_finished_urban.*
-import org.jetbrains.anko.doAsync
 
 class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     // Variables to hold EMDK related objects
@@ -88,12 +85,13 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
             val results = EMDKManager.getEMDKManager(this.requireContext(), this)
             // Check the return status of getEMDKManager() and update the status TextView accordingly.
             if (results.statusCode != EMDKResults.STATUS_CODE.SUCCESS) {
-                //updateStatus("Barcode request failed!")
+                updateStatus("Barcode request failed!")
             } else {
                 //updateStatus("Barcode reader initialization is in progress...")
             }
         }catch (e: Exception) {
             //updateStatus("Error loading EMDK Manager")
+            Log.e(TAG, "Error loading EMDK Manager")
         }
     }
 
@@ -102,7 +100,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
         barcodeManager = emdkManager?.getInstance(EMDKManager.FEATURE_TYPE.BARCODE) as BarcodeManager
         // Add external scanner connection listener.
         if (barcodeManager == null) {
-            Toast.makeText(this.context, "Barcode scanning is not supported.", Toast.LENGTH_LONG).show()
+            showSnackbar("Barcode scanning is not supported.")
         }
     }
 
@@ -125,11 +123,12 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
                     // such as setConfig() or read().
                     scanner?.enable()
                 } catch (e: ScannerException) {
-                    //updateStatus(e.message)
+                    Log.e(TAG, "Error al inicializar escaner", e)
+                    updateStatus("Error al inicializar escaner")
                     deInitScanner()
                 }
             } else {
-                //updateStatus("Failed to initialize the scanner device.")
+                updateStatus("Failed to initialize the scanner device.")
             }
         }
     }
@@ -140,7 +139,8 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
                 // Release the scanner
                 scanner?.release()
             } catch (e: Exception) {
-                updateStatus(e.message)
+                Log.e(TAG, "Error al liberar escaner", e)
+                updateStatus("Error al liberar escaner")
             }
             scanner = null
         }
@@ -148,17 +148,17 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
 
     override fun onOpened(_emdkManager: EMDKManager?) {
         // Get a reference to EMDKManager
-        emdkManager =  _emdkManager;
+        emdkManager =  _emdkManager
         // Get a  reference to the BarcodeManager feature object
-        initBarcodeManager();
+        initBarcodeManager()
         // Initialize the scanner
-        initScanner();
+        initScanner()
     }
 
     override fun onClosed() {
         // The EMDK closed unexpectedly. Release all the resources.
-        emdkManager?.release();
-        emdkManager = null;
+        emdkManager?.release()
+        emdkManager = null
         updateStatus("EMDK closed unexpectedly! Please close and restart the application.");
     }
 
@@ -171,7 +171,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
         when (state) {
             StatusData.ScannerStates.IDLE -> {
                 // Scanner is idle and ready to change configuration and submit read.
-                statusStr = statusData?.friendlyName + " is   enabled and idle..."
+                //statusStr = statusData?.friendlyName + " is   enabled and idle..."
                 // Change scanner configuration. This should be done while the scanner is in IDLE state.
                 setConfig()
                 try {
@@ -184,15 +184,15 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
             }
             StatusData.ScannerStates.WAITING -> {
                 // Scanner is waiting for trigger press to scan...
-                statusStr = "Scanner is waiting for trigger press..."
+                // statusStr = "Scanner is waiting for trigger press..."
             }
             StatusData.ScannerStates.SCANNING -> {
                 // Scanning is in progress...
-                statusStr = "Scanning..."
+                // statusStr = "Scanning..."
             }
             StatusData.ScannerStates.DISABLED -> {
                 // Scanner is disabled
-                statusStr = statusData?.friendlyName + " is disabled."
+                // statusStr = statusData?.friendlyName + " is disabled."
             }
             StatusData.ScannerStates.ERROR -> {
                 // Error has occurred during scanning
@@ -200,7 +200,9 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
             }
         }
         // Updates TextView with scanner state on UI thread.
-        updateStatus(statusStr);
+        if (statusStr.isNotEmpty()) {
+            updateStatus(statusStr)
+        }
     }
 
     override fun onData(scanDataCollection: ScanDataCollection?) {
@@ -220,9 +222,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
                 dataStr = "$barcodeData  $labelType";
             }
             // Updates EditText with scanned data and type of label on UI thread.
-            doAsync {
-                searchData(dataStr)
-            }
+            searchData(dataStr)
         }
     }
 
@@ -259,21 +259,13 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
         Log.i(TAG, "delivery line id readed: $deliveryLineId")
         Log.i(TAG, "index readed: $index")
         var foundDeliveryLines: List<Delivery>? = listOf()
-        //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId.toInt()))
         if (viewModel.deliveries.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
-            /*for (deliveryLine in scannedViewModel.certificatedLines.value!!) {
-                foundDeliveryLines = scannedViewModel.certificatedLines.value!!.filter { d ->
-                    d.deliveryId == deliveryId && d.id == deliveryLineId && d.index == index
-                }
-            }*/
             foundDeliveryLines = viewModel.deliveries.value!!.filter { d ->
                 d.deliveryId == deliveryId && listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(d.deliveryState)
             }
         } else {
             Log.e(TAG, "Error con datos de entrada")
-            activity?.runOnUiThread {
-                showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
-            }
+            showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
             return
         }
         if (!foundDeliveryLines.isNullOrEmpty()) {
@@ -328,7 +320,7 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
     }
 
     private fun showSnackbar(message: String) {
-        certifiedUnitsRv?.let {
+        activity?.runOnUiThread {
             Snackbar.make(certifiedUnitsRv,
                 message,
                 Snackbar.LENGTH_SHORT)
@@ -341,23 +333,4 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
         this.emdkManager?.release(EMDKManager.FEATURE_TYPE.BARCODE);
         this.emdkManager = null;
     }
-/*
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater): Unit {
-        inflater.inflate(R.menu.menu_planification, menu)
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.startRoute -> {
-                startRoute()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    fun startRoute() {
-
-    }*/
 }

@@ -23,7 +23,7 @@ class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mut
         init {
             openButton = itemView.findViewById(R.id.openBtn)
             openButton.visibility = View.GONE
-            if (planification?.state == "OnGoing") {
+            if (planification?.state == "OnGoing" || planification?.state == "UnDelivered") {
                 openButton.visibility = View.VISIBLE
             }
         }
@@ -89,7 +89,7 @@ class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mut
             itemView.addressTv?.text = delivery?.receiverAddress
             itemView.customerTv?.visibility = View.VISIBLE
             itemView.addressTv?.visibility = View.VISIBLE
-            itemView.dateTv?.text = delivery?.deliveryDate
+            itemView.dateTv?.text = delivery?.orderDate
             itemView.qtyTv?.text = delivery?.totalQuantity.toString()
             itemView.deliveryLinesTv?.text = delivery?.totalQuantity.toString()
             //itemView.unitsTv.text = planification.totalUnits.toString()
