@@ -50,24 +50,24 @@
                         android:gravity="center|center_horizontal"
                         android:orientation="vertical"
                         android:textAlignment="center"
-                        android:visibility="gone">
+                        android:visibility="visible">
 
                         <TextView
-                            android:id="@+id/certifiedDeliveriesTv"
+                            android:id="@+id/partialDeliveriesTv"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="100"
                             android:textAlignment="center"
                             android:textAppearance="@style/TextAppearance.AppCompat.Display1"
-                            android:textColor="#43A047"
+                            android:textColor="#205D9E"
                             android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Certificados"
+                            android:text="Parciales"
                             android:textAlignment="center"
-                            android:textColor="#43A047" />
+                            android:textColor="#205D9E" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -180,21 +180,21 @@
                         android:visibility="gone">
 
                         <TextView
-                            android:id="@+id/certifiedDeliveryLinesTv"
+                            android:id="@+id/partialDeliveryLinesTv"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="100"
                             android:textAlignment="center"
                             android:textAppearance="@style/TextAppearance.AppCompat.Display1"
-                            android:textColor="#43A047"
+                            android:textColor="#FF205D9E"
                             android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Certificados"
+                            android:text="Parciales"
                             android:textAlignment="center"
-                            android:textColor="#43A047" />
+                            android:textColor="#FF205D9E" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -206,7 +206,7 @@
                         android:textAlignment="center">
 
                         <TextView
-                            android:id="@+id/deliveredDeliveryLinesTv"
+                            android:id="@+id/deliveredUnitsTv"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="100"
@@ -232,7 +232,7 @@
                         android:textAlignment="center">
 
                         <TextView
-                            android:id="@+id/undeliveredDeliveryLinesTv"
+                            android:id="@+id/undeliveredUnitsTv"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="0"
@@ -255,12 +255,12 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:padding="5dp"
-                    android:text="@string/delivery_lines"
+                    android:text="@string/delivery_units"
                     android:textAppearance="@style/TextAppearance.AppCompat.Medium"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/totalDeliveryLinesTv2"
+                    android:id="@+id/totalUnitsTv2"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_toEndOf="@+id/textView3"

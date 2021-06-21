@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
@@ -54,9 +55,16 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
         viewModel.deliveries.observe(viewLifecycleOwner, Observer{deliveries ->
             Log.i(TAG, "deliveries recibidos: $deliveries")
             filteredData.clear()
-            filteredData.addAll(deliveries.filter{
-                listOf("OnGoing", "Dispatched", "ReDispatched", "Created", "Planned", "DeliveryPlanned").contains(it.deliveryState)
-            })
+            if(!deliveries.isNullOrEmpty()) {
+                filteredData.addAll(deliveries.filter {
+                    listOf("OnGoing",
+                        "Dispatched",
+                        "ReDispatched",
+                        "Created",
+                        "Planned",
+                        "DeliveryPlanned").contains(it.deliveryState)
+                })
+            }
             mAdapter?.notifyDataSetChanged()
         })
         viewModel.planification.observe(viewLifecycleOwner, Observer{_planification ->
@@ -65,7 +73,7 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
         searchEt4.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
                 if (searchEt4.text.isNotEmpty()) {
-                    searchData(searchEt4.text.toString())
+                    searchData(searchEt4.text.toString().toLowerCase())
                 } else {
                     filteredData.clear()
                     filteredData.addAll(viewModel.deliveries.value?.filter{
@@ -76,11 +84,22 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
             }
             false
         }
+        searchEt4.doOnTextChanged { text, start, before, count ->
+            if(text.isNullOrEmpty()){
+                filteredData.clear()
+                filteredData.addAll(viewModel.deliveries.value?.filter {
+                    listOf("OnGoing", "Created", "Dispatched", "ReDispatched", "Planned", "DeliveryPlanned").contains(it.deliveryState)
+                }?.toMutableList() ?: mutableListOf())
+            } else {
+                searchData(text.toString().toLowerCase())
+            }
+            mAdapter?.notifyDataSetChanged()
+        }
         initEMDK()
     }
 
     fun initAdapter() {
-        mAdapter = PlanificationLineAdapter(filteredData, viewModel.planification.value, requireContext())
+        mAdapter = PlanificationLineAdapter(filteredData, viewModel.planification.value, activity, PlanificationDetailActivity.DELIVERY_DETAIL)
         pendingDeliveriesRv?.addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.HORIZONTAL))
         pendingDeliveriesRv?.layoutManager = LinearLayoutManager(requireContext())
         pendingDeliveriesRv?.adapter = mAdapter
@@ -226,47 +245,33 @@ class PendingDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.
                 dataStr = "$barcodeData  $labelType";
             }
             // Updates EditText with scanned data and type of label on UI thread.
-            searchData(dataStr)
+            searchData(dataStr.toLowerCase())
         }
     }
 
     fun searchData(barcode: String) {
         Log.i(TAG, "barcode readed: $barcode")
-        var foundDeliveryLines: List<Delivery> = listOf()
+        var foundDeliveries: List<Delivery> = listOf()
         //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
         if (barcode.isNotEmpty()) {
-            foundDeliveryLines = viewModel.deliveries.value!!.filter { d ->
-                d.deliveryId == barcode.toLong() && listOf("OnGoing", "Dispatched", "Created", "Planned", "DeliveryPlanned", "ReDispatched").contains(d.deliveryState)
-            }
-        } else {
-            Log.e(TAG, "Error con datos de entrada")
-            activity?.runOnUiThread {
-                showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
-            }
-            return
+            foundDeliveries = viewModel.deliveries.value?.filter { d ->
+                val _barcode = barcode.toLowerCase()
+                (d.deliveryNumber.toLowerCase().contains(_barcode) ||
+                d.deliveryId.toString().contains(_barcode) ||
+                d.referenceDocument?.toLowerCase()?.contains(_barcode) == true ||
+                d.receiverName?.toLowerCase()?.contains(_barcode) == true) &&
+                listOf("OnGoing", "Dispatched", "ReDispatched", "Created", "Planned", "DeliveryPlanned").contains(d.deliveryState)
+            }!!
         }
-        if (!foundDeliveryLines.isNullOrEmpty()) {
-            updateStatus("Codigo Encontrado")
+        if (!foundDeliveries.isNullOrEmpty()) {
+            updateStatus(getString(R.string.item_found))
             filteredData.clear()
-            filteredData.addAll(foundDeliveryLines.toMutableList())
+            filteredData.addAll(foundDeliveries.toMutableList())
             activity?.runOnUiThread {
                 mAdapter?.notifyDataSetChanged()
             }
         } else {
-            updateStatus("Codigo No Encontrado")
-        }
-    }
-
-    fun showAlert(title: String, message: String, listener: (() -> Unit?)? = null) {
-        activity?.runOnUiThread {
-            val builder = AlertDialog.Builder(this.requireActivity())
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { _, _ ->
-                listener?.invoke()
-            })
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
+            updateStatus(getString(R.string.item_not_found))
         }
     }
 

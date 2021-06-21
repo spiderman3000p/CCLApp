@@ -41,23 +41,7 @@ class LoginActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         //supportActionBar?.hide()
         setContentView(R.layout.activity_login)
-        //analytics event
-        /*val analytics: FirebaseAnalytics = Firebase.analytics
-        analytics.logEvent(FirebaseAnalytics.Event.SELECT_ITEM) {
-            param(FirebaseAnalytics.Param.ITEM_ID, "InitScreen")
-        }*/
-        /*FirebaseMessaging.getInstance().token.addOnCompleteListener(OnCompleteListener { task ->
-            if (!task.isSuccessful) {
-                Log.w(TAG, "Fetching FCM registration token failed", task.exception)
-                return@OnCompleteListener
-            }
 
-            // Get new FCM registration token
-            val token = task.result
-            // Log and toast
-            Log.d(TAG, token)
-            Toast.makeText(baseContext, token, Toast.LENGTH_SHORT).show()
-        })*/
         val sharedPref = getSharedPreferences(packageName, Context.MODE_PRIVATE)
         if (!sharedPref.contains("firstRun")) {
             val intent = Intent(this, IntroActivity::class.java)

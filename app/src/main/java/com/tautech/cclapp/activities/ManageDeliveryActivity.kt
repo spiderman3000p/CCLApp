@@ -13,13 +13,18 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.viewpager.widget.ViewPager
+import com.google.android.gms.common.util.CrashUtils
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.google.firebase.crashlytics.internal.analytics.CrashlyticsOriginAnalyticsEventLogger
+import com.google.firebase.crashlytics.internal.common.CrashlyticsCore
+import com.google.firebase.crashlytics.internal.model.CrashlyticsReport
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
-import com.tautech.cclapp.activities.ui_delivery_detail.delivery_payment.DeliveryPaymentFragment
 import com.tautech.cclapp.adapters.SectionsPagerAdapter
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
@@ -37,11 +42,13 @@ import retrofit2.Retrofit
 import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
+import kotlin.collections.ArrayList
+import kotlin.math.absoluteValue
 
 class ManageDeliveryActivity : AppCompatActivity() {
+    private lateinit var sectionsPagerAdapter: SectionsPagerAdapter
     private var deliveryLinesLoaded: Boolean = false
-    private var paymentDetailsSaved: Boolean = false
-    private var paymentDetails: DeliveryPaymentDetail? = null
+    private var paymentsSaved: Boolean = false
     private var filesSaved: Boolean = false
     private var savedItems: Boolean = false
     private var deliveredItemList: List<DeliveredItemToUpload>? = null
@@ -54,24 +61,29 @@ class ManageDeliveryActivity : AppCompatActivity() {
     private var retrofitClient: Retrofit? = null
     private var mStateManager: AuthStateManager? = null
     var db: AppDatabase? = null
-    private val viewModel: ManageDeliveryActivityViewModel by viewModels()
+    private lateinit var viewModel: ManageDeliveryActivityViewModel
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_manage_delivery)
+        Log.i(TAG, "onCreate()...")
         val viewPager: ViewPager = findViewById(R.id.view_pager2)
         val tabs: TabLayout = findViewById(R.id.tabs2)
-        val sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager)
+        val _viewModel: ManageDeliveryActivityViewModel by viewModels()
+        viewModel = _viewModel
+        Log.i(TAG, "onCreate() viewModel deliveryLines: ${viewModel.deliveryLines.value}")
+        Log.i(TAG, "onCreate() viewModel state: ${viewModel.currentDeliveryState.value}")
+        sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager, this::onDeliveryLineChangedCallback)
         viewPager.offscreenPageLimit = 3
         viewPager.adapter = sectionsPagerAdapter
         tabs.setupWithViewPager(viewPager)
         doneBtn.isEnabled = false
+
         doneBtn.setOnClickListener { view ->
-            val fragment = DeliveryFormFragment.getInstance()
-            val fragment2 = DeliveryPaymentFragment.getInstance()
-            //supportFragmentManager.findFragmentByTag("DeliveryForm") as DeliveryFormFragment?
-            val validForm = fragment?.isValidForm()
-            if (fragment != null && validForm == true && (viewModel.showPaymentMethod.value == false ||
-               (viewModel.showPaymentMethod.value == true && fragment2?.isValidForm() == true))) {
+            if (!isValidForm()){
+                showSnackbar(getString(R.string.invalid_form))
+            } else if (!isPaymentValid()) {
+                showSnackbar(getString(R.string.invalid_payment))
+            } else {
                 askForChangeState()
             }
         }
@@ -90,53 +102,66 @@ class ManageDeliveryActivity : AppCompatActivity() {
             Log.e(TAG, "Database error found", ex)
         }
         if (config.hasConfigurationChanged()) {
-            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
             return
         }
         if (!mStateManager!!.current.isAuthorized) {
-            showAlert("Error", "Su sesion ha expirado", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Error", "Su sesion ha expirado", this::signOut)
             return
         }
-        viewModel.state.observe(this, Observer{newState ->
+        viewModel.currentDeliveryState.observe(this, Observer{ newState ->
             Log.i(TAG, "nuevo estado observado $newState")
-            //doAsync {
-                /*Log.i(TAG, "buscando definiciones en la BD local para el estado $newState...")
-                val foundStateFormDefinition = db?.stateFormDefinitionDao()?.getAllByStateAndCustomer(newState, planification?.customerId!!)
-                if (!foundStateFormDefinition.isNullOrEmpty()) {
-                    Log.i(TAG, "found state form definition: $foundStateFormDefinition")
-                    foundStateFormDefinition[0].formFieldList = db?.stateFormDefinitionDao()?.getFields(foundStateFormDefinition[0].id!!)
-                    Log.i(TAG, "found fieldList: ${foundStateFormDefinition[0].formFieldList}")
-                    viewModel.stateFormDefinition.postValue(foundStateFormDefinition[0])
-                } else {
-                    Log.e(TAG, "form definitions not found for state $newState and customer ${planification?.customerId}")
-                    viewModel.stateFormDefinition.postValue(null)
-                }*/
-                if (!deliveryLinesLoaded){
-                    loadDeliveryLines()
-                }
-                checkDoneBtnStatus()
-            //}
+            if (!deliveryLinesLoaded){
+                loadDeliveryLines()
+            }
+            if(newState == "UnDelivered"){
+                viewModel.showPaymentMethod.setValue(false)
+            } else {
+                viewModel.showPaymentMethod.setValue(true)
+            }
+            checkDoneBtnStatus()
         })
         viewModel.showPaymentMethod.observe(this, Observer{show ->
-            Log.i(TAG, "showPaymentMethod recibido $show")
-            if (!show) {
-                Log.i(TAG, "removiendo pestaña de pago...")
-                tabs.removeTabAt(2)
-                val _sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager, true)
-                viewPager.offscreenPageLimit = 2
-                viewPager.adapter = _sectionsPagerAdapter
-                tabs.setupWithViewPager(viewPager)
+            Log.i(TAG, "showPaymentMethod recibido $show y estado es ${viewModel.currentDeliveryState.value}")
+            if (!show || viewModel.currentDeliveryState.value == "UnDelivered") {
+                Log.i(TAG, "Hay que ocultar la pestaña de pagos...hay ${tabs.tabCount} pestañas")
+                if (tabs.tabCount == 3) {
+                    Log.i(TAG, "Hay tres pestañas. removiendo pestaña de pago...")
+                    showLoader()
+                    tabs.removeTabAt(2)
+                    val _sectionsPagerAdapter =
+                        SectionsPagerAdapter(this, supportFragmentManager, this::onDeliveryLineChangedCallback,true)
+                    viewPager.offscreenPageLimit = 2
+                    viewPager.adapter = null
+                    viewPager.adapter = _sectionsPagerAdapter
+                    tabs.setupWithViewPager(viewPager)
+                    hideLoader()
+                } else {
+                    Log.i(TAG, "No hay tres pestañas...")
+                }
+            } else if(show && viewModel.currentDeliveryState.value != "UnDelivered") {
+                Log.i(TAG, "Hay que mostrar la pestaña de pagos...hay ${tabs.tabCount} pestañas")
+                if (tabs.tabCount < 3) {
+                    showLoader()
+                    Log.i(TAG, "hay menos de 3 pestañas. agregando pestaña de pago...")
+                    val _sectionsPagerAdapter = SectionsPagerAdapter(this, supportFragmentManager, this::onDeliveryLineChangedCallback)
+                    viewPager.offscreenPageLimit = 3
+                    viewPager.adapter = null
+                    viewPager.adapter = _sectionsPagerAdapter
+                    tabs.setupWithViewPager(viewPager)
+                    hideLoader()
+                } else {
+                    Log.i(TAG, "Hay mas de dos pestañas...")
+                }
             }
         })
-        viewModel.changedDeliveryLine.observe(this, Observer {deliveryLine ->
-            Log.i(TAG, "cantidad de items cambiada para el delivery line: $deliveryLine")
-            val changedDeliveryLine = viewModel.deliveryLines.value?.find {
-                it.id == deliveryLine.id
-            }
-            changedDeliveryLine?.delivered = deliveryLine.delivered
-            val state = getFinalFutureState()
-            Log.i(TAG, "estado final generado: $state")
-            viewModel.state.setValue(state)
+        viewModel.payments.observe(this, {payments ->
+            Log.i(TAG, "observed payments $payments")
+            calculateTotals()
+        })
+        viewModel.deliveryLines.observe(this, Observer { deliveryLines ->
+            Log.i(TAG, "observed delivery lines: $deliveryLines")
+            calculateTotals()
         })
         val extras = intent.extras
         if (extras != null) {
@@ -147,7 +172,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 fetchPaymentMethods()
                 viewModel.planification.setValue(planification)
             } else {
-                showAlert(getString(R.string.error), getString(R.string.no_planification_received))
+                CclUtilities.getInstance().showAlert(this,getString(R.string.error), getString(R.string.no_planification_received))
                 Log.e(TAG, "no se recibio ninguna planificacion")
                 finish()
             }
@@ -155,7 +180,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 delivery = extras.getSerializable("delivery") as Delivery
                 viewModel.delivery.setValue(delivery)
             } else {
-                showAlert(getString(R.string.error), getString(R.string.no_delivery_received))
+                CclUtilities.getInstance().showAlert(this,getString(R.string.error), getString(R.string.no_delivery_received))
                 Log.e(TAG, "no se recibio ninguna delivery")
                 finish()
             }
@@ -163,28 +188,64 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 val newState = extras.getString("state") ?: ""
                 Log.i(TAG, "estado recibido de actividad: $newState")
                 if(newState.isEmpty()){
-                    showAlert(getString(R.string.error), getString(R.string.no_state_received))
+                    CclUtilities.getInstance().showAlert(this,getString(R.string.error), getString(R.string.no_state_received))
                     Log.e(TAG, "no se recibio ningun estado")
                     finish()
                 } else {
-                    viewModel.state.setValue(newState)
+                    viewModel.currentDeliveryState.setValue(newState)
                 }
             } else {
                 Log.e(TAG, "no se recibio ningun estado")
-                showAlert(getString(R.string.error), getString(R.string.no_state_received))
+                CclUtilities.getInstance().showAlert(this,getString(R.string.error), getString(R.string.no_state_received))
                 finish()
             }
         } else {
             Log.i(TAG, "no se recibieron datos")
-            showAlert(getString(R.string.error), getString(R.string.no_data_received))
+            CclUtilities.getInstance().showAlert(this,getString(R.string.error), getString(R.string.no_data_received))
             finish()
         }
     }
 
     fun checkDoneBtnStatus(){
         runOnUiThread {
-            doneBtn.isEnabled = listOf("UnDelivered", "Delivered", "Partial").contains(viewModel.state.value)
+            doneBtn.isEnabled = listOf("UnDelivered", "Delivered", "Partial").contains(viewModel.currentDeliveryState.value)
         }
+    }
+
+    private fun onDeliveryLineChangedCallback(deliveryLine: DeliveryLine){
+        Log.i(TAG, "cantidad de items cambiada para el delivery line recibido: $deliveryLine")
+        val changedDeliveryLine = viewModel.deliveryLines.value?.find {
+            it.id == deliveryLine.id
+        }
+        Log.i(TAG, "delivery lines en el viewmodel: ${viewModel.deliveryLines.value}")
+        changedDeliveryLine?.delivered = deliveryLine.delivered
+        Log.i(TAG, "delivery line cambiado en el viewmodel: $changedDeliveryLine")
+        calculateTotals()
+        Log.i(TAG, "estado inicial del viewmodel: ${viewModel.currentDeliveryState.value}")
+        val state = getFinalFutureState()
+        Log.i(TAG, "estado final generado: $state")
+        viewModel.currentDeliveryState.setValue(state)
+        viewModel.currentDeliveryState.postValue(state)
+        Log.i(TAG, "estado final del viewmodel: ${viewModel.currentDeliveryState.value}")
+    }
+
+    fun calculateTotals(){
+        Log.i(TAG, "calculating totals...")
+        val utilities = CclUtilities.getInstance()
+        val totalToPay = (viewModel.deliveryLines.value?.fold(0.0, { total, deliveryLine ->
+            total + if (deliveryLine.delivered > 0) ((deliveryLine.price / deliveryLine.quantity) * deliveryLine.delivered) else 0.0
+        })  ?: 0.0)
+        val totalPaid = (viewModel.payments.value?.fold(0.0, { total, payment ->
+            total + (payment.detail?.amount ?: 0.0)
+        })  ?: 0.0)
+        val pending = totalToPay - totalPaid
+        Log.i(TAG, "total paid: $totalPaid")
+        Log.i(TAG, "total to pay: $totalToPay")
+        Log.i(TAG, "total pending: $pending")
+        totalToPayTv.text = utilities.formatCurrencyNumber(totalToPay)
+        paidAmountTv.text = utilities.formatCurrencyNumber(totalPaid)
+        totalPendingTv.text = utilities.formatCurrencyNumber(if(pending > 0.1) pending else 0.0)
+        totalExceedingTv.text = utilities.formatCurrencyNumber(if(pending < 0.0) pending.absoluteValue else 0.0)
     }
 
     override fun onResume() {
@@ -199,9 +260,6 @@ class ManageDeliveryActivity : AppCompatActivity() {
             if (delivery == null) {
                 loadDelivery(delivery?.deliveryId)
             }
-            /*if (viewModel.state.value != null && viewModel.deliveryLines.value.isNullOrEmpty()){
-                loadDeliveryLines()
-            }*/
             hideLoader()
         }
     }
@@ -228,8 +286,8 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 db?.deliveryDao()?.getGroupedLines(delivery?.deliveryId!!) ?: listOf()
             if (!deliveryLines.isNullOrEmpty()) {
                 Log.i(TAG,
-                    "deliveryLines cargadas de la bd local para la guia ${delivery?.deliveryId} y el estado ${viewModel.state.value}: $deliveryLines")
-                when (viewModel.state.value) {
+                    "deliveryLines cargadas de la bd local para la guia ${delivery?.deliveryId} y el estado ${viewModel.currentDeliveryState.value}: $deliveryLines")
+                when (viewModel.currentDeliveryState.value) {
                     "Delivered" -> {
                         deliveryLines.forEach { deliveryLine ->
                             deliveryLine.delivered = deliveryLine.quantity
@@ -249,6 +307,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 Log.i(TAG, "enviando delivery lines: $deliveryLines")
                 deliveryLinesLoaded = true
                 viewModel.deliveryLines.postValue(deliveryLines.toMutableList())
+                calculateTotals()
             }
         }
     }
@@ -261,7 +320,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban los detalles del customer", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -277,22 +336,16 @@ class ManageDeliveryActivity : AppCompatActivity() {
                         "Bearer $accessToken")
                         .execute()
                     val response = call.body()
-                    Log.i(TAG, "respuesta al cargar customer details: ${response}")
-                    if (response != null) {
-                        Log.i(TAG, "enviando showPaymentMethod ${response.showPaymentMethod}")
-                        viewModel.showPaymentMethod.postValue(response.showPaymentMethod)
-                    } else {
-                        Log.i(TAG, "la respuesta es null, enviando showPaymentMethod false")
-                        viewModel.showPaymentMethod.postValue(false)
-                    }
+                    Log.i(TAG, "respuesta al cargar customer details: $response")
+                    viewModel.showPaymentMethod.postValue(response?.showPaymentMethod ?: false)
                 } catch(toe: SocketTimeoutException) {
                     Log.e(TAG, "Error de red cargando customer details", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     Log.e(TAG,
                         "Error de red cargando customer details",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
         }
@@ -306,7 +359,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban metodos de pago", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -326,12 +379,12 @@ class ManageDeliveryActivity : AppCompatActivity() {
                     }
                 } catch(toe: SocketTimeoutException) {
                     Log.e(TAG, "Error de red cargando metodos de pago", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     Log.e(TAG,
                         "Error de red cargando customer details",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
         }
@@ -356,37 +409,12 @@ class ManageDeliveryActivity : AppCompatActivity() {
     }
 
     fun askForChangeState() {
-        showAlert(getString(R.string.important), getString(R.string.manage_delivery_prompt), this::changeDeliveryState)
-    }
-
-    fun showAlert(title: String, message: String, positiveCallback: (() -> Unit)? = null, negativeCallback: (() -> Unit)? = null) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { dialog, id ->
-                if (positiveCallback != null) {
-                    positiveCallback()
-                }
-                dialog.dismiss()
-            })
-            builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener { dialog, id ->
-                if (negativeCallback != null) {
-                    negativeCallback()
-                }
-                dialog.dismiss()
-            })
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
-        }
+        CclUtilities.getInstance().showAlert(this,getString(R.string.important), getString(R.string.manage_delivery_prompt), this::changeDeliveryState)
     }
 
     fun changeDeliveryState() {
         val fragment = DeliveryFormFragment.getInstance()
-            //supportFragmentManager.findFragmentByTag("DeliveryForm") as DeliveryFormFragment?
-        val fragment2 = DeliveryPaymentFragment.getInstance()
-        if (fragment?.isValidForm() == true && (viewModel.showPaymentMethod.value == false ||
-           (viewModel.showPaymentMethod.value == true && fragment2?.isValidForm() == true))) {
+        if (fragment?.isValidForm() == true && isPaymentValid()) {
             formDataWithoutFiles = fragment.generateFormDataWithoutFiles()
             formDataWithFiles = fragment.generateFormDataWithFiles()
             deliveredItemList = generateDeliveredItemList()
@@ -397,19 +425,18 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 saveDeliveryStateFormWithoutFiles()
             } else {
                 Log.e(TAG, "form or item list are null")
-                showAlert("Error", "Los datos de formulario o la lista de items son invalidos")
+                CclUtilities.getInstance().showAlert(this,"Error", "Los datos de formulario o la lista de items son invalidos")
             }
-        }/* else {
-            Toast.makeText(this, getString(R.string.no_state_form_found), Toast.LENGTH_SHORT).show()
-        }*/
+        }
     }
 
     fun generateDeliveredItemList(): List<DeliveredItemToUpload>? {
         return ManageDeliveryItemsFragment.getInstance()?.filteredData?.map {deliveryLine ->
             DeliveredItemToUpload(
-                quantity = deliveryLine.delivered,
-                price = deliveryLine.price,
-                deliveryLineId = deliveryLine.id
+                quantityDelivered = deliveryLine.delivered,
+                amount = (deliveryLine.price / deliveryLine.quantity) * deliveryLine.delivered,
+                deliveryLineId = deliveryLine.id,
+                planificationId = planification?.id!!
             )
         }
     }
@@ -432,25 +459,26 @@ class ManageDeliveryActivity : AppCompatActivity() {
         }
     }
 
-    fun saveDeliveryPaymentMethod() {
-        if (paymentDetails != null) {
-            fetchData(this::saveDeliveryPaymentMethod)
-        } else {
-            Log.e(TAG, "el formulario sin archivos es invalido")
-        }
-    }
-    
     private fun saveDeliveryStateFormWithFiles() {
         Log.i(TAG, "trying to upload form files...")
         showLoader()
         formDataWithFiles?.forEach { item ->
             if (item.value != null && item.value is File) {
-                MyWorkerManagerService.enqueSingleFileUpload(this, item, savedFormId, viewModel.planification.value?.customerId)
+                MyWorkerManagerService.enqueSingleFileUpload(this, item, "form", savedFormId, planification?.customerId)
             } else {
                 showSnackbar(getString(R.string.invalid_file_for, item.name))
             }
         }
         filesSaved = true
+        finishActivity()
+    }
+
+    private fun saveDeliveryPayments() {
+        Log.i(TAG, "trying to upload form files...")
+        showLoader()
+        // guardar todos de una vez
+        MyWorkerManagerService.enqueUploadSinglePaymentArrayWork(this, viewModel.payments.value!!, delivery?.deliveryId!!)
+        paymentsSaved = true
         finishActivity()
     }
 
@@ -466,7 +494,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se guardaban los items entregados", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -484,14 +512,27 @@ class ManageDeliveryActivity : AppCompatActivity() {
                     hideLoader()
                     Log.i(TAG, "save delivered items response code ${call.code()}")
                     if (call.code() == 200) {
-                        //db?.deliveryLineDao()?.insertAll(viewModel.deliveredItems.value!!)
-                        //viewModel.deliveryLines.postValue(viewModel.deliveredItems.value!!)
-                        delivery?.totalDelivered = (delivery?.totalDelivered ?: 0) +
-                        (viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
-                            totalDelivered + deliveryLine.delivered
-                        })  ?: 0)
+                        db?.deliveryLineDao()?.insertAll(viewModel.deliveryLines.value!!)
+                        val deliveredUnitsCount = deliveredItemList?.fold(0, { totalDelivered, deliveryLine ->
+                            totalDelivered + deliveryLine.quantityDelivered
+                        }) ?: 0
+                        //val newDeliveredUnitsCount = ((delivery?.totalDelivered ?: 0) - deliveredUnitsCount).absoluteValue
+                        delivery?.totalDelivered = (delivery?.totalDelivered ?: 0) + deliveredUnitsCount
                         db?.deliveryDao()?.update(delivery!!)
-                        viewModel.delivery.postValue(delivery)
+                        // actualizamos los contadores de planificacion correspondientes
+                        if (viewModel.currentDeliveryState.value != "UnDelivered") {
+                            planification?.totalDeliveredUnits = (planification?.totalDeliveredUnits ?: 0) + deliveredUnitsCount
+                        }
+                        Log.i(TAG, "estado de la guia antes de actualizar la planificacion: ${viewModel.currentDeliveryState.value}")
+                        when(viewModel.currentDeliveryState.value) {
+                            "Delivered" -> planification?.totalDelivered = (planification?.totalDelivered ?: 0) + 1
+                            "Partial" -> planification?.totalPartial = (planification?.totalPartial ?: 0) + 1
+                            "UnDelivered" -> planification?.totalUndelivered = (planification?.totalUndelivered ?: 0) + 1
+                        }
+                        //planification?.totalDeliveredUnits = (planification?.totalDeliveredUnits ?: 0) + newDeliveredUnitsCount
+                        Log.i(TAG, "cambios en planificacion por guardar a la BD: $planification")
+                        db?.planificationDao()?.update(planification!!)
+                        //viewModel.delivery.postValue(delivery)
                         savedItems = true
                         showSnackbar(getString(R.string.delivered_items_saved))
                         finishActivity()
@@ -499,17 +540,18 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 } catch(toe: SocketTimeoutException) {
                     hideLoader()
                     Log.e(TAG, "Network error when saving delivered items", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     hideLoader()
                     Log.e(TAG,
                         "Network error when saving delivered items",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch(ex: Exception){
+                    FirebaseCrashlytics.getInstance().recordException(ex)
                     hideLoader()
                     Log.e(TAG,"Error desconocido al itentar guardar items", ex)
-                    showAlert(getString(R.string.error), getString(R.string.unknown_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.error), getString(R.string.unknown_error))
                 }
             }
         }
@@ -519,7 +561,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se guardaba el formulario", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -528,12 +570,12 @@ class ManageDeliveryActivity : AppCompatActivity() {
             CclDataService::class.java)
         if (dataService != null && accessToken != null) {
             val urlSaveForm = "delivery/${delivery?.deliveryId}/state-history"
-            formDataWithoutFiles?.state = viewModel.state.value!!
+            formDataWithoutFiles?.state = viewModel.currentDeliveryState.value!!
             doAsync {
                 try {
                     val callSaveForm = dataService.savePlanificationStateForm(urlSaveForm,
                         this@ManageDeliveryActivity.formDataWithoutFiles!!,
-                        viewModel.planification.value?.customerId,
+                        planification?.customerId!!,
                         "Bearer $accessToken")
                         .execute()
                     hideLoader()
@@ -544,14 +586,8 @@ class ManageDeliveryActivity : AppCompatActivity() {
                         if (formDataWithFiles != null  && savedFormId != null) {
                             saveDeliveryStateFormWithFiles()
                             saveDeliveredItemList()
-                            if (viewModel.showPaymentMethod.value == true) {
-                                val fragment2 = DeliveryPaymentFragment.getInstance()
-                                if (fragment2 != null) {
-                                    paymentDetails = fragment2.generateDeliveryPaymentDetail()
-                                    if (viewModel.showPaymentMethod.value == true && fragment2.isValidForm()) {
-                                        saveDeliveryPaymentMethod()
-                                    }
-                                }
+                            if (viewModel.showPaymentMethod.value == true && viewModel.currentDeliveryState.value != "UnDelivered" && viewModel.payments.value?.isNotEmpty() == true) {
+                                saveDeliveryPayments()
                             }
                             delivery?.deliveryState = formDataWithoutFiles?.state
                             db?.deliveryDao()?.update(delivery!!)
@@ -563,53 +599,13 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 } catch(toe: SocketTimeoutException) {
                     hideLoader()
                     Log.e(TAG, "Network error when saving state form", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     hideLoader()
                     Log.e(TAG,
                         "Network error when saving state form",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
-                }
-            }
-        }
-    }
-
-    private fun saveDeliveryPaymentMethod(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
-        if (ex != null) {
-            Log.e(TAG, "ocurrio una excepcion mientras se guardaba el metodo de pago", ex)
-            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
-            }
-            return
-        }
-        showLoader()
-        val dataService: CclDataService? = CclClient.getInstance()?.create(
-            CclDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            val urlSaveForm = "paymentDetails"
-            doAsync {
-                showSnackbar(getString(R.string.saving_form))
-                try {
-                    val callSaveForm = dataService.saveDeliveryPaymentDetails(
-                        this@ManageDeliveryActivity.paymentDetails!!,
-                        "Bearer $accessToken")
-                        .execute()
-                    hideLoader()
-                    Log.i(TAG, "save payment details response ${callSaveForm.code()}")
-                    if (callSaveForm.code() == 201) {
-                        paymentDetailsSaved = true
-                    }
-                } catch(toe: SocketTimeoutException) {
-                    hideLoader()
-                    Log.e(TAG, "Network error when saving payment details", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
-                } catch (ioEx: IOException) {
-                    hideLoader()
-                    Log.e(TAG,
-                        "Network error when saving payment details",
-                        ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@ManageDeliveryActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
         }
@@ -693,7 +689,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
             if (resp != null) {
                 if (ex != null) {
                     Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                    showAlert("Error",
+                    CclUtilities.getInstance().showAlert(this,"Error",
                         "No se pudo finalizar la sesion",
                         this::signOut)
                 } else {
@@ -701,7 +697,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
                 }
             } else {
                 Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                showAlert("Error",
+                CclUtilities.getInstance().showAlert(this,"Error",
                     "No se pudo finalizar la sesion remota",
                     this::signOut)
             }
@@ -709,7 +705,7 @@ class ManageDeliveryActivity : AppCompatActivity() {
     }
 
     fun finishActivity(){
-        if(savedFormId != null && savedItems && ((!formDataWithFiles.isNullOrEmpty() && filesSaved) || formDataWithFiles.isNullOrEmpty())){
+        if(isFormAndItemsCompleted() && isPaymentCompleted()){
             val data = ArrayList<DeliveryLine>()
             data.addAll(viewModel.deliveryLines.value!!)
             setResult(RESULT_OK, Intent().putExtra("deliveredLines", data))
@@ -717,8 +713,48 @@ class ManageDeliveryActivity : AppCompatActivity() {
         }
     }
 
+    private fun isFormAndItemsCompleted(): Boolean{
+        // si se guardo el formulario, los items y los archivos del formulario en caso de que aplique...
+        return savedFormId != null && savedItems && ((!formDataWithFiles.isNullOrEmpty() && filesSaved) || formDataWithFiles.isNullOrEmpty())
+    }
+
+    private fun isPaymentCompleted(): Boolean {
+        // si el pago es requerido y el estado es valido, o el pago es requerido pero el estado invalido, o el pago no es requerido
+        return ((viewModel.showPaymentMethod.value == true && viewModel.currentDeliveryState.value != "UnDelivered" && paymentsSaved) ||
+                (viewModel.showPaymentMethod.value == true && viewModel.currentDeliveryState.value == "UnDelivered") ||
+                viewModel.showPaymentMethod.value == false)
+    }
+
+    private fun isPaymentValid(): Boolean {
+        // si el pago no es requerido, o el pago es requerido y el estado valido, o el pago es requerido pero el estado es invalido
+        val totalToPay = (viewModel.deliveryLines.value?.fold(0.0, { total, deliveryLine ->
+            total + if (deliveryLine.delivered > 0) ((deliveryLine.price / deliveryLine.quantity) * deliveryLine.delivered) else 0.0
+        })  ?: 0.0)
+        val totalPaid = (viewModel.payments.value?.fold(0.0, { total, payment ->
+            total + (payment.detail?.amount ?: 0.0)
+        })  ?: 0.0)
+        val paymentExceeded = (totalPaid - totalToPay) >= 1
+        val paymentNotEnough = (totalToPay - totalPaid) >= 1
+        Log.i(TAG, "totalPaid - totalToPay: ${totalPaid - totalToPay}")
+        Log.i(TAG, "totalToPay - totalPaid: ${totalToPay - totalPaid}")
+        Log.i(TAG, "totalPaid: $totalPaid")
+        Log.i(TAG, "totalToPay: $totalToPay")
+        val invalidPayment = paymentExceeded || paymentNotEnough
+        Log.i(TAG, "valid payment: $invalidPayment")
+        return (viewModel.showPaymentMethod.value == false ||
+                (viewModel.showPaymentMethod.value == true && viewModel.currentDeliveryState.value != "UnDelivered" &&
+                viewModel.payments.value?.isNotEmpty() == true
+                && !invalidPayment) ||
+                (viewModel.showPaymentMethod.value == true && viewModel.currentDeliveryState.value == "UnDelivered"))
+    }
+
+    private fun isValidForm(): Boolean {
+        val fragment = DeliveryFormFragment.getInstance()
+        return (viewModel.stateFormDefinition.value != null && fragment != null && fragment.isValidForm())
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        //viewModel.clear() crea un ciclo infinito
+        sectionsPagerAdapter.clear()
     }
 }

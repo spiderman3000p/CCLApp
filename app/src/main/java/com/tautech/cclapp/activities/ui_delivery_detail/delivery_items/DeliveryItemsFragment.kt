@@ -20,7 +20,9 @@ import com.symbol.emdk.barcode.*
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.DeliveryDetailActivity
 import com.tautech.cclapp.activities.DeliveryDetailActivityViewModel
+import com.tautech.cclapp.activities.ManageDeliveryActivityViewModel
 import com.tautech.cclapp.adapters.DeliveryLineItemAdapter
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_delivery_items.*
 
@@ -30,7 +32,7 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
   private var barcodeManager: BarcodeManager? = null;
   private var scanner: Scanner? = null;
   private var filteredData: MutableList<DeliveryLine> = mutableListOf()
-  val viewModel: DeliveryDetailActivityViewModel by activityViewModels()
+  private lateinit var viewModel: DeliveryDetailActivityViewModel
   val TAG = "DELIVERY_ITEMS_FRAGMENT"
   private var mAdapter: DeliveryLineItemAdapter? = null
   override fun onCreateView(
@@ -40,6 +42,8 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
   ): View? {
     val root = inflater.inflate(R.layout.fragment_delivery_items, container, false)
     Log.i(TAG, "onCreateView DeliveryItemsFragment")
+    val _viewModel: DeliveryDetailActivityViewModel by activityViewModels()
+    viewModel = _viewModel
     return root
   }
 
@@ -56,9 +60,11 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
       mAdapter?.notifyDataSetChanged()
     })
     viewModel.deliveryLines.observe(viewLifecycleOwner, Observer{lines ->
-      Log.i(TAG, "Delivery lines observadas(${lines.size}): ${lines}")
+      Log.i(TAG, "Delivery lines observadas(${lines?.size}): ${lines}")
       filteredData.clear()
-      filteredData.addAll(lines)
+      if (!lines.isNullOrEmpty()) {
+        filteredData.addAll(lines)
+      }
       mAdapter?.notifyDataSetChanged()
     })
     searchEt4.setOnKeyListener { v, keyCode, event ->
@@ -242,7 +248,7 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
     } else {
       Log.e(TAG, "Error con datos de entrada")
       activity?.runOnUiThread {
-        showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
+        CclUtilities.getInstance().showAlert(requireActivity(),"ERROR DE ENTRADA", "Error con datos de entrada")
       }
       return
     }
@@ -255,19 +261,6 @@ class DeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKMan
       }
     } else {
       updateStatus(getString(R.string.item_not_found))
-    }
-  }
-
-  fun showAlert(title: String, message: String, listener: (() -> Unit?)? = null) {
-    activity?.runOnUiThread {
-      val builder = AlertDialog.Builder(this.requireActivity())
-      builder.setTitle(title)
-      builder.setMessage(message)
-      builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { _, _ ->
-        listener?.invoke()
-      })
-      val dialog: AlertDialog = builder.create()
-      dialog.show()
     }
   }
 

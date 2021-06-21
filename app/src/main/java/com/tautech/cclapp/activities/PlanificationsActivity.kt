@@ -20,9 +20,11 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.CollapsingToolbarLayout
 import com.google.android.material.snackbar.Snackbar
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.PlanificationAdapter
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
@@ -46,7 +48,6 @@ const val KEY_DRIVER_INFO = "driverInfo"
 class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener {
     val TAG = "PLANIFICATIONS_ACTIVITY"
     var searchStr: String = ""
-    private var retrofitClient: Retrofit? = null
     private var planifications: MutableList<Planification> = mutableListOf()
     private var mAdapter: PlanificationAdapter? = null
     var db: AppDatabase? = null
@@ -62,18 +63,17 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
         swiperefresh.setOnRefreshListener {
             fetchData(this::fetchUserPlanifications)
         }
-        retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(this)
         db = AppDatabase.getDatabase(this)
         val config = Configuration.getInstance(this)
         if (config.hasConfigurationChanged()) {
-            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", true)
+            CclUtilities.getInstance().showAlert(this,"Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
             return
         }
         if (mStateManager?.keycloakUser == null || mStateManager?.driverInfo == null) {
             Log.i(TAG, "keycloakUser ${mStateManager?.keycloakUser}")
             Log.i(TAG, "driverInfo ${mStateManager?.driverInfo}")
-            showAlert("User Data Error", "Some user data are wrong or empty.", false)
+            CclUtilities.getInstance().showAlert(this,"User Data Error", "Some user data are wrong or empty.")
             startActivity(Intent(this, DashboardActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
             finish()
         }
@@ -126,7 +126,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                 }
             }
         } else {
-            showAlert("User Data Error", "Some user data are wrong or empty.", true)
+            CclUtilities.getInstance().showAlert(this,"User Data Error", "Some user data are wrong or empty.", this::signOut)
         }
     }
 
@@ -175,17 +175,18 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                             Log.e(TAG,
                                 "Error saving planifications to local dabase",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                            CclUtilities.getInstance().showAlert(this@PlanificationsActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                         } catch (ex: SQLiteConstraintException) {
                             Log.e(TAG,
                                 "Error saving planifications to local dabase",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                            CclUtilities.getInstance().showAlert(this@PlanificationsActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                         } catch (ex: Exception) {
+                            FirebaseCrashlytics.getInstance().recordException(ex)
                             Log.e(TAG,
                                 "Error saving planifications to local dabase",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                            CclUtilities.getInstance().showAlert(this@PlanificationsActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                         }
                         uiThread {
                             messageTv.visibility = View.GONE
@@ -209,6 +210,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                         Log.e(TAG, "Failed to parse planifications response", jsonEx)
                     }
                 } catch (e: Exception) {
+                    FirebaseCrashlytics.getInstance().recordException(e)
                     hideLoader()
                     showSnackbar(getString(R.string.error_fetching_planifications))
                     uiThread {
@@ -274,9 +276,9 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
             if (resp != null) {
                 if (ex != null) {
                     Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                    showAlert("Error",
+                    CclUtilities.getInstance().showAlert(this,"Error",
                         "No se pudo finalizar la sesion",
-                        true)
+                        this::signOut)
                 } else {
                     mStateManager?.signOut(this)
                     val mainIntent = Intent(this,
@@ -288,9 +290,9 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
                 }
             } else {
                 Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                showAlert("Error",
+                CclUtilities.getInstance().showAlert(this,"Error",
                     "No se pudo finalizar la sesion remota",
-                    true)
+                    this::signOut)
             }
         }
     }
@@ -329,25 +331,7 @@ class PlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefresh
             planificationsRv.visibility = View.GONE
         }
     }
-
-    fun showAlert(title: String, message: String, exitToLogin: Boolean = false) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", null)
-            val dialog: AlertDialog = builder.create();
-            if(!isFinishing && !isDestroyed) {
-                dialog.show();
-                dialog.setOnDismissListener {
-                    if (exitToLogin) {
-                        mStateManager?.signOut(this)
-                    }
-                }
-            }
-        }
-    }
-
+    
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         val inflater: MenuInflater = menuInflater
         inflater.inflate(R.menu.default_menu, menu)

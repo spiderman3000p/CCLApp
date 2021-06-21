@@ -30,7 +30,7 @@ data class Delivery(
     var deliveryState: String? = "",
     @ColumnInfo(name = "deliveryNumber")
     @SerializedName("deliveryNumber")
-    var deliveryNumber: Long? = 0,
+    var deliveryNumber: String = "",
     @ColumnInfo(name = "notes")
     @SerializedName("notes")
     var notes: String = "",
@@ -73,6 +73,4 @@ data class Delivery(
     @SerializedName("totalCertified")
     @ColumnInfo(name = "totalCertified")
     var totalCertified: Int? = 0
-): Serializable {
-
-}
+): Serializable

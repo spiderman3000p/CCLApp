@@ -25,17 +25,17 @@ class ResumeFragment : Fragment() {
     ): View? {
         val root = inflater.inflate(R.layout.fragment_resume, container, false)
         viewModel.pendingDeliveryLines.observe(viewLifecycleOwner, Observer{pendingDeliveryLines ->
-            certifiedDeliveryLinesTv.text = viewModel.certifiedDeliveryLines.value?.size.toString()
+            partialDeliveryLinesTv.text = viewModel.certifiedDeliveryLines.value?.size.toString()
             uncertifiedDeliveryLinesTv.text = pendingDeliveryLines.size.toString()
             updateDeliveriesCount()
         })
         viewModel.certifiedDeliveryLines.observe(viewLifecycleOwner, Observer{certifiedDeliveryLines ->
-            certifiedDeliveryLinesTv.text = certifiedDeliveryLines.size.toString()
+            partialDeliveryLinesTv.text = certifiedDeliveryLines.size.toString()
             uncertifiedDeliveryLinesTv.text = viewModel.pendingDeliveryLines.value?.size.toString()
             updateDeliveriesCount()
         })
         viewModel.planification.observe(viewLifecycleOwner, Observer { planification ->
-            certifiedDeliveryLinesTv.text = viewModel.certifiedDeliveryLines.value?.size.toString()
+            partialDeliveryLinesTv.text = viewModel.certifiedDeliveryLines.value?.size.toString()
             uncertifiedDeliveryLinesTv.text = viewModel.pendingDeliveryLines.value?.size.toString()
             updateDeliveriesCount()
         })
@@ -51,11 +51,11 @@ class ResumeFragment : Fragment() {
     }
 
     fun initCounters(){
-        certifiedDeliveriesTv.text = "0"
+        partialDeliveriesTv.text = "0"
         uncertifiedDeliveriesTv.text = "0"
-        certifiedDeliveryLinesTv.text = (viewModel.planification.value?.totalCertified ?: 0).toString()
+        partialDeliveryLinesTv.text = (viewModel.planification.value?.totalCertified ?: 0).toString()
         uncertifiedDeliveryLinesTv.text = ((viewModel.planification.value?.totalDeliveries ?: 0) - (viewModel.planification.value?.totalCertified ?: 0)).toString()
-        totalDeliveriesTv.text = (viewModel.planification.value?.totalDeliveries ?: 0).toString()
+        totalCashDeliveriesTv.text = (viewModel.planification.value?.totalDeliveries ?: 0).toString()
         totalDeliveryLinesTv.text = (viewModel.planification.value?.totalDeliveries ?: 0).toString()
     }
 
@@ -76,7 +76,7 @@ class ResumeFragment : Fragment() {
             Log.i(TAG, "certified deliveries count: $certifiedDeliveriesCount")
             uiThread {
                 pendingDeliveriesCount = (deliveries?.size ?: 0) - certifiedDeliveriesCount
-                certifiedDeliveriesTv.text =
+                partialDeliveriesTv.text =
                     certifiedDeliveriesCount.toString()
                 uncertifiedDeliveriesTv.text =
                     pendingDeliveriesCount.toString()

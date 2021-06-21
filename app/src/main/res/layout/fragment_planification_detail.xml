@@ -242,7 +242,7 @@
                         android:layout_marginBottom="37dp"
                         android:drawableTop="@drawable/ic__05_checklist"
                         android:drawablePadding="10dp"
-                        android:text="@string/delivery_lines"
+                        android:text="@string/delivery_units"
                         android:textAlignment="center"
                         android:textSize="14sp" />
                 </androidx.cardview.widget.CardView>

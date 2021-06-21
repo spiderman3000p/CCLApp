@@ -9,6 +9,7 @@ import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.ManageDeliveryItemsFragment
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_payment.DeliveryPaymentFragment
+import com.tautech.cclapp.models.DeliveryLine
 
 private val TAB_TITLES = arrayOf(
     R.string.form,
@@ -20,16 +21,10 @@ private val TAB_TITLES = arrayOf(
  * A [FragmentPagerAdapter] that returns a fragment corresponding to
  * one of the sections/tabs/pages.
  */
-class SectionsPagerAdapter(private val context: Context, fm: FragmentManager, private val exceptLastPage: Boolean = false) :
+class SectionsPagerAdapter(private val context: Context, fm: FragmentManager,
+                           private var onDeliveryLineChangedCallback: ((deliveryLine: DeliveryLine) -> Unit) ? = null,
+                           private val exceptLastPage: Boolean = false) :
     FragmentPagerAdapter(fm, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT) {
-    /*var formFragment: DeliveryFormFragment? = null
-    var paymentFragment: DeliveryPaymentFragment? = null
-    init{
-        formFragment = DeliveryFormFragment.getInstance()
-        if (!exceptLastPage) {
-            paymentFragment = DeliveryPaymentFragment.getInstance()
-        }
-    }*/
     override fun getItem(position: Int): Fragment {
         // getItem is called to instantiate the fragment for the given page.
         // Return a PlaceholderFragment (defined as a static inner class below).
@@ -39,7 +34,7 @@ class SectionsPagerAdapter(private val context: Context, fm: FragmentManager, pr
                 DeliveryFormFragment.getInstance()
             }
             1 -> {
-                ManageDeliveryItemsFragment.getInstance()
+                ManageDeliveryItemsFragment.getInstance(onDeliveryLineChangedCallback)
             }
             2 -> {
                 DeliveryPaymentFragment.getInstance()
@@ -59,5 +54,11 @@ class SectionsPagerAdapter(private val context: Context, fm: FragmentManager, pr
         val  exceptPages = if (exceptLastPage){ 1 }else{ 0 }
         return 3 - exceptPages
         //return 3
+    }
+
+    fun clear(){
+        DeliveryFormFragment.mInstance = null
+        ManageDeliveryItemsFragment.mInstance = null
+        DeliveryFormFragment.mInstance = null
     }
 }

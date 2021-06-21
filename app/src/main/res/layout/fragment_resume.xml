@@ -52,7 +52,7 @@
                         android:textAlignment="center">
 
                         <TextView
-                            android:id="@+id/certifiedDeliveriesTv"
+                            android:id="@+id/partialDeliveriesTv"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="100"
@@ -116,7 +116,7 @@
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/totalDeliveriesTv"
+                    android:id="@+id/totalCashDeliveriesTv"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_alignTop="@+id/textView32"
@@ -165,7 +165,7 @@
                         android:textAlignment="center">
 
                         <TextView
-                            android:id="@+id/certifiedDeliveryLinesTv"
+                            android:id="@+id/partialDeliveryLinesTv"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="100"

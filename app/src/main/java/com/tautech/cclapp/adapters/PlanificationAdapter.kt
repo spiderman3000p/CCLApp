@@ -72,7 +72,7 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
                         (100 * (planification.totalDelivered ?: 0) / (planification.totalDeliveries
                             ?: 1)).toDouble()
                 }
-                percentStr = String.format("%.2f", percent) + "% (${planification.totalDeliveries})"
+                percentStr = String.format("%.2f", percent) + "% ${itemView.context.getString(R.string.delivered)} (${planification.totalDelivered})"
             }
             itemView.percentCertifiedTv.text = percentStr
             //itemView.progressBar.setProgress(percent.toInt(), true)
@@ -80,7 +80,7 @@ class PlanificationAdapter(private val dataList: List<Planification>, val contex
             //itemView.addressTv.text = planification.address
             itemView.dateTv.text = planification.dispatchDate
             itemView.qtyTv.text = planification.totalDeliveries.toString()
-            //itemView.deliveryLinesTv.text = planification.totalLines.toString()
+            itemView.deliveryLinesTv.text = planification.totalLines.toString()
             itemView.unitsTv.text = planification.totalUnits.toString()
         }
     }

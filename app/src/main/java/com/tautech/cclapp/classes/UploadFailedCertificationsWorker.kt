@@ -20,12 +20,10 @@ class UploadFailedCertificationsWorker
 ) : Worker(appContext, workerParams) {
     private val TAG = "UPLOAD_CERTIFICATIONS_WORKER"
     var db: AppDatabase? = null
-    private var retrofitClient: Retrofit? = null
     private var mStateManager: AuthStateManager? = null
     private var pendingCertifications: List<PendingToUploadCertification>? = null
 
     fun initAll(){
-        retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(appContext)
         try {
             db = AppDatabase.getDatabase(appContext)

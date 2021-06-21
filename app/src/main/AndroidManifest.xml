@@ -55,6 +55,7 @@
         android:name=".CCLApp"
         android:allowBackup="true"
         android:configChanges="keyboardHidden|orientation|screenSize"
+        android:screenOrientation="portrait"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:requestLegacyExternalStorage="true"
@@ -65,17 +66,9 @@
         <activity
             android:name=".activities.RootActivity"
             android:label="@string/title_activity_root"
-            android:theme="@style/Theme.CCLApp.NoActionBar"></activity>
-        <!--
-        provider
-            android:name="androidx.work.impl.WorkManagerInitializer"
-            android:authorities="${applicationId}.workmanager-init"
-            android:directBootAware="false"
-            android:exported="false"
-            android:multiprocess="true"
-            tools:node="remove"
-            tools:targetApi="n" /
-        -->
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.CCLApp.NoActionBar"/>
         <provider
             android:name="androidx.work.impl.WorkManagerInitializer"
             android:authorities="${applicationId}.workmanager-init"
@@ -84,6 +77,8 @@
         <activity
             android:name=".activities.ManageDeliveryActivity"
             android:label="@string/title_activity_manage_delivery"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.CCLApp" />
         <!--
              The API key for Google Maps-based APIs is defined as a string resource.
@@ -99,6 +94,8 @@
 
         <activity
             android:name=".activities.MapsActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_maps" />
 
         <provider
@@ -113,67 +110,54 @@
 
         <activity
             android:name=".activities.CreateSignatureActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_create_signature"
-            android:theme="@style/Theme.CCLApp.Fullscreen" />
+            android:theme="@style/Theme.CCLApp" />
         <activity
             android:name=".activities.DeliveryDetailActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_delivery_detail"
             android:theme="@style/Theme.CCLApp" />
-        <!--
-service
-            android:name=".services.MyFirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service
-        -->
         <activity
             android:name=".activities.IntroActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.CCLApp.NoActionBar" />
 
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
-        <!--
-meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" /
-        -->
-        <!--
- Set color used with incoming notification messages. This is used when no color is set for the incoming
-             notification message. See README(https://goo.gl/6BKBk7) for more.
-        -->
-        <!--
-meta-data
-            android:name="com.google.firebase.messaging.default_notification_color"
-            android:resource="@color/white" /
-        -->
-        <!--
-meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="@string/default_notification_channel_id" /
-        -->
         <activity
             android:name=".activities.PlanificationsActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_planifications"
             android:theme="@style/Theme.CCLApp.NoActionBar" />
         <activity
             android:name=".activities.UrbanPlanificationsActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_planifications"
             android:theme="@style/Theme.CCLApp.NoActionBar" />
         <activity
             android:name=".activities.DashboardActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_dashbooard"
             android:theme="@style/Theme.CCLApp" />
         <activity
             android:name=".activities.PlanificationDetailActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_delivery"
             android:theme="@style/Theme.CCLApp" />
         <activity
             android:name=".activities.LoginActivity"
-            android:theme="@style/Theme.CCLApp.NoActionBar">
+            android:theme="@style/Theme.CCLApp.NoActionBar"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -188,6 +172,8 @@ meta-data
         <activity
             android:name=".activities.CertificateActivity"
             android:label="@string/app_name"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.CCLApp" />
     </application>
 

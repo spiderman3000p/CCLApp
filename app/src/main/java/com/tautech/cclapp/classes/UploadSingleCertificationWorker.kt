@@ -25,11 +25,9 @@ class UploadSingleCertificationWorker
     private val MAX_REINTENT = 3
     private var failedRequestsCounter = 0
     var db: AppDatabase? = null
-    private var retrofitClient: Retrofit? = null
     private var mStateManager: AuthStateManager? = null
 
     override fun doWork(): Result {
-        retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(appContext)
         try {
             db = AppDatabase.getDatabase(appContext)

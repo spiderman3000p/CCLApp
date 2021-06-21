@@ -11,7 +11,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
 import android.text.InputType
 import android.util.Log
@@ -29,9 +28,11 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.gms.maps.model.LatLng
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.*
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.classes.DatePickerFragmentDialog
 import com.tautech.cclapp.database.AppDatabase
@@ -46,7 +47,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.SocketTimeoutException
-import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.collections.HashMap
 
@@ -59,11 +59,14 @@ data class FieldValueContainer(
 class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
   private val REQUEST_LOCATION_PERMISSION: Int = 2
   private val REQUEST_CAMERA_PERMISSION: Int = 1
+  private var CURRENT_LOCATION_VIEW: Int? = null
+  private var CURRENT_CAMERA_VIEW: Int? = null
   val TAG = "DELIVERY_FORM_FRAGMENT"
   val createdControls = HashMap<Int, FieldValueContainer>()
   private var retrofitClient: Retrofit? = null
   private var mStateManager: AuthStateManager? = null
   var db: AppDatabase? = null
+  private lateinit var viewModel: ManageDeliveryActivityViewModel
   override fun onCreateView(
     inflater: LayoutInflater,
     container: ViewGroup?,
@@ -84,11 +87,13 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
       Log.e(TAG, "Database error found", ex)
     }
     if (config.hasConfigurationChanged()) {
-      showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
+      CclUtilities.getInstance().showAlert(requireActivity(),"Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
     }
     if (!mStateManager!!.current.isAuthorized) {
-      showAlert("Error", "Su sesion ha expirado", this::signOut)
+      CclUtilities.getInstance().showAlert(requireActivity(),"Error", "Su sesion ha expirado", this::signOut)
     }
+    val _viewModel: ManageDeliveryActivityViewModel by activityViewModels()
+    viewModel = _viewModel
     return root
   }
 
@@ -96,21 +101,19 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     super.onViewCreated(view, savedInstanceState)
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayHomeAsUpEnabled(true)
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayShowHomeEnabled(true)
-    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     viewModel.stateFormDefinition.observe(viewLifecycleOwner, Observer { definition ->
       Log.i(TAG, "state form definition observada: $definition")
       Log.i(TAG, "numero de controles dentro del formulario: ${formContainerLayout?.childCount}")
       if (definition != null/* && createdControls.isNullOrEmpty()*/) {
-        loadForm(definition, viewModel.delivery.value)/*
-      } else if (definition != null && !createdControls.isNullOrEmpty()) {
-        showForm()*/
+        loadForm(definition, viewModel.delivery.value)
       } else {
-        showEmptyFormMessage(getString(R.string.no_state_form_found_arg, viewModel.state.value))
+        showEmptyFormMessage(getString(R.string.no_state_form_found_arg, viewModel.currentDeliveryState.value))
         formContainerLayout?.removeAllViews()
         createdControls.clear()
       }
     })
-    viewModel.state.observe(viewLifecycleOwner, Observer {state ->
+    viewModel.currentDeliveryState.observe(viewLifecycleOwner, Observer { state ->
+      Log.i(TAG, "state observado: $state")
       if(state != null) {
         loadFormDefinitionFromLocalDB()
       }
@@ -204,42 +207,6 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               FieldSubType.Photo.value -> {
                 Log.i(TAG, "el subtipo es foto")
                 //intent = Intent(requireContext(), TakePhotoActivity::class.java)
-                intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { takePictureIntent ->
-                  // Ensure that there's a camera activity to handle the intent
-                  if (activity?.packageManager != null) {
-                    if (takePictureIntent.resolveActivity(activity?.packageManager!!) != null) {
-                      Log.i(TAG, "creating image file...")
-                      // Create the File where the photo should go
-                      val photoFile: File? = try {
-                        createImageFile()
-                      } catch (ex: IOException) {
-                        // Error occurred while creating the File
-                        showMessage(getString(R.string.error_creating_file))
-                        Log.e(TAG, "Error al crear imagen de destino", ex)
-                        null
-                      }
-                      // Continue only if the File was successfully created
-                      if (photoFile != null) {
-                        Log.i(TAG, "image file created")
-                        preValue = photoFile
-                        val photoURI: Uri = FileProvider.getUriForFile(
-                          requireContext(),
-                          "com.tautech.cclapp.fileprovider",
-                          photoFile
-                        )
-                        Log.i(TAG, "photoFile created: ${photoFile.absolutePath}")
-                        Log.i(TAG, "photoFile created uri: ${photoURI}")
-                        takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
-                      } else {
-                        Log.e(TAG, "photoFile was not created")
-                      }
-                    } else {
-                      Log.e(TAG, "No hay provider para la funcion de camara")
-                    }
-                  } else {
-                    Log.e(TAG, "package manager es null")
-                  }
-                }
                 (viewAux.getChildAt(2) as ImageButton).setImageDrawable(ContextCompat.getDrawable(
                   requireContext(),
                   R.drawable.ic_camera___936_))
@@ -255,21 +222,33 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                 "No se encontro el subtipo ${field.subtype} del campo ${field.label}")
             }
             requestCode = formContainerLayout?.childCount
+            val fieldSubType = field.subtype
             (viewAux.getChildAt(2) as ImageButton).setOnClickListener { view ->
-              if (intent != null) {
-                if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED) {
-                  if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)){
-                    showAlert(getString(R.string.important),
-                      getString(R.string.should_show_rationale_camera_permission_message))
+              when (fieldSubType) {
+                FieldSubType.Photo.value -> {
+                  if (ContextCompat.checkSelfPermission(requireContext(),
+                      Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED
+                  ) {
+                    if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+                      CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.important),
+                        getString(R.string.should_show_rationale_camera_permission_message))
+                    } else {
+                      CURRENT_CAMERA_VIEW = requestCode
+                      requestPermissions(arrayOf(Manifest.permission.CAMERA),
+                        REQUEST_CAMERA_PERMISSION)
+                    }
                   } else {
-                    requestPermissions(arrayOf(Manifest.permission.CAMERA),
-                      REQUEST_CAMERA_PERMISSION)
+                    CURRENT_CAMERA_VIEW = requestCode
+                    takePicture(requestCode!!)
                   }
-                } else {
-                  startActivityForResult(intent, requestCode!!)
                 }
-              } else {
-                showMessage(getString(R.string.no_action_provided))
+                FieldSubType.Signature.value -> {
+                  if (intent != null) {
+                    startActivityForResult(intent, requestCode!!)
+                  } else {
+                    showMessage(getString(R.string.no_action_provided))
+                  }
+                }
               }
             }
             viewAux.id = View.generateViewId()
@@ -328,19 +307,8 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
             (viewAux.getChildAt(0) as TextView).text = "${field.label} ${if(field.required == true) "*" else "" }"
             val requestCode = formContainerLayout?.childCount
             (viewAux.getChildAt(2) as ImageButton).setOnClickListener {
-              // TODO: abrir mapa con la posicion del movil
-              val intent = Intent(requireContext(), MapsActivity::class.java)
-              if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_DENIED) {
-                if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)){
-                  showAlert(getString(R.string.important),
-                    getString(R.string.should_show_rationale_location_permission_message))
-                } else {
-                  requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                    REQUEST_LOCATION_PERMISSION)
-                }
-              } else {
-                startActivityForResult(intent, requestCode!!)
-              }
+              CURRENT_LOCATION_VIEW = requestCode
+              getPosition(requestCode!!)
             }
             viewAux.id = View.generateViewId()
             viewId = viewAux.id
@@ -457,30 +425,44 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     }
   }
 
-  @Throws(IOException::class)
-  private fun createImageFile(): File {
-    // Create an image file name
-    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
-    val storageDir: File = activity?.getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
-    val file = File.createTempFile(
-      "JPEG_${timeStamp}_", /* prefix */
-      ".jpg", /* suffix */
-      storageDir /* directory */
-    )
-    Log.i(TAG, "image file created: ${file.absolutePath}")
-    return file
-  }
-
-  @Throws(IOException::class)
-  private fun createImageFileSignature(extension: String): File {
-    // Create an image file name
-    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
-    val storageDir: File = activity?.getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
-    return File.createTempFile(
-      "${timeStamp}_", /* prefix */
-      ".$extension", /* suffix */
-      storageDir /* directory */
-    )
+  private fun takePicture(requestCode: Int){
+    val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { takePictureIntent ->
+      // Ensure that there's a camera activity to handle the intent
+      if (activity?.packageManager != null) {
+        if (takePictureIntent.resolveActivity(activity?.packageManager!!) != null) {
+          Log.i(TAG, "creating image file...")
+          // Create the File where the photo should go
+          val photoFile: File? = try {
+            CclUtilities.getInstance().createImageFile(requireContext())
+          } catch (ex: IOException) {
+            // Error occurred while creating the File
+            showMessage(getString(R.string.error_creating_file))
+            Log.e(TAG, "Error al crear imagen de destino", ex)
+            null
+          }
+          // Continue only if the File was successfully created
+          if (photoFile != null) {
+            Log.i(TAG, "image file created")
+            createdControls[requestCode]?.fieldValue = photoFile
+            val photoURI: Uri = FileProvider.getUriForFile(
+              requireContext(),
+              "com.tautech.cclapp.fileprovider",
+              photoFile
+            )
+            Log.i(TAG, "photoFile created: ${photoFile.absolutePath}")
+            Log.i(TAG, "photoFile created uri: ${photoURI}")
+            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
+          } else {
+            Log.e(TAG, "photoFile was not created")
+          }
+        } else {
+          Log.e(TAG, "No hay provider para la funcion de camara")
+        }
+      } else {
+        Log.e(TAG, "package manager es null")
+      }
+    }
+    startActivityForResult(intent, requestCode)
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -544,7 +526,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                   }
                 } else {
                   Log.e(TAG, "Documento seleccionado invalido")
-                  showAlert(getString(R.string.error), getString(R.string.selected_document_error))
+                  CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.error), getString(R.string.selected_document_error))
                 }
               }
             }
@@ -557,7 +539,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                 if (bmp != null) {
                   // Create the File where the photo should go
                   val signatureFile: File? = try {
-                    createImageFileSignature("png")
+                    CclUtilities.getInstance().createImageFileSignature("png", requireContext())
                   } catch (ex: IOException) {
                     // Error occurred while creating the File
                     Log.e(TAG, "Error ocurred while creating the image file", ex)
@@ -621,6 +603,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
                   }
                 }
               } catch (e: Exception) {
+                FirebaseCrashlytics.getInstance().recordException(e)
                 Log.e(TAG, "Excepcion:", e)
               }
             }
@@ -657,6 +640,22 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
       } else {
         Log.e(TAG, "No se encontro control en el indice $requestCode")
       }
+    }
+  }
+
+  private fun getPosition(requestCode: Int){
+    // TODO: abrir mapa con la posicion del movil
+    val intent = Intent(requireContext(), MapsActivity::class.java)
+    if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_DENIED) {
+      if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)){
+        CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.important),
+          getString(R.string.should_show_rationale_location_permission_message))
+      } else {
+        requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+          REQUEST_LOCATION_PERMISSION)
+      }
+    } else {
+      startActivityForResult(intent, requestCode)
     }
   }
 
@@ -802,7 +801,6 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
 
   @kotlin.jvm.Throws(IOException::class)
   fun getFinalFutureState(): String{
-    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     val totalDeliveredItems = viewModel.deliveryLines.value?.fold(0, { totalDelivered, deliveryLine ->
       totalDelivered + deliveryLine.delivered
     })  ?: 0
@@ -941,11 +939,10 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     if (ex != null) {
       Log.e(TAG, "ocurrio una excepcion mientras se recuperaban lineas de planificacion", ex)
       if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-        showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+        CclUtilities.getInstance().showAlert(requireActivity(),"Sesion expirada", "Su sesion ha expirado", this::signOut)
       }
       return
     }
-    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     Log.i(TAG, "loading form definitions...")
     //https://{{hostname}}/stateFormDefinitions/search/findByCustomerId?customerId=2
     //val url = "stateFormDefinitions/search/findByCustomerId?customerId=${viewModel.planification.value?.customerId}"
@@ -987,19 +984,20 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
               Log.e(TAG,
                 "Error guardando state form definitions en la BD local",
                 ex)
-              showAlert(getString(R.string.database_error),
+              CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.database_error),
                 getString(R.string.database_error_saving_state_form_definitions))
             } catch (ex: SQLiteConstraintException) {
               Log.e(TAG,
                 "Error guardando state form definitions en la BD local",
                 ex)
-              showAlert(getString(R.string.database_error),
+              CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.database_error),
                 getString(R.string.database_error_saving_state_form_definitions))
             } catch (ex: Exception) {
+              FirebaseCrashlytics.getInstance().recordException(ex)
               Log.e(TAG,
                 "Error guardando state form definitions en la BD local",
                 ex)
-              showAlert(getString(R.string.database_error),
+              CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.database_error),
                 getString(R.string.database_error_saving_state_form_definitions))
             }
           } else {
@@ -1008,26 +1006,25 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
         } catch(toe: SocketTimeoutException) {
           swipeRefresh2.isRefreshing = false
           Log.e(TAG, "Error de red cargando state form definitions", toe)
-          showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+          CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.network_error_title), getString(R.string.network_error))
         } catch (ioEx: IOException) {
           swipeRefresh2.isRefreshing = false
           Log.e(TAG,
             "Error de red cargando state form definitions",
             ioEx)
-          showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+          CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.network_error_title), getString(R.string.network_error))
         }
       }
     }
   }
 
   private fun loadFormDefinitionFromLocalDB(){
-    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
-    if (viewModel.state.value != null) {
+    if (viewModel.currentDeliveryState.value != null) {
       Log.i(TAG,
-        "buscando definiciones en la BD local para el estado ${viewModel.state.value}...")
+        "buscando definiciones en la BD local para el estado ${viewModel.currentDeliveryState.value}...")
       doAsync {
         val foundStateFormDefinition = db?.stateFormDefinitionDao()
-          ?.getAllByStateAndCustomer(viewModel.state.value!!,
+          ?.getAllByStateAndCustomer(viewModel.currentDeliveryState.value!!,
             viewModel.planification.value?.customerId!!)
         if (!foundStateFormDefinition.isNullOrEmpty()) {
           hideEmptyFormMessage()
@@ -1038,7 +1035,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           viewModel.stateFormDefinition.postValue(foundStateFormDefinition[0])
         } else {
           Log.e(TAG,
-            "form definitions not found for state ${viewModel.state.value} and customer ${viewModel.planification.value?.customerId}")
+            "form definitions not found for state ${viewModel.currentDeliveryState.value} and customer ${viewModel.planification.value?.customerId}")
           viewModel.stateFormDefinition.postValue(null)
         }
       }
@@ -1059,42 +1056,7 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
     mStateManager?.signOut(requireContext())
     //activity?.finish()
   }
-
-  fun showAlert(title: String, message: String) {
-    activity?.runOnUiThread {
-      val builder = AlertDialog.Builder(requireContext())
-      builder.setTitle(title)
-      builder.setMessage(message)
-      builder.setPositiveButton("Aceptar", null)
-      val dialog: AlertDialog = builder.create();
-      if(activity?.isDestroyed == false && activity?.isFinishing == false) {
-        dialog.show()
-      }
-    }
-  }
-
-  fun showAlert(title: String, message: String, positiveCallback: (() -> Unit)? = null, negativeCallback: (() -> Unit)? = null) {
-    val builder = AlertDialog.Builder(requireContext())
-    builder.setTitle(title)
-    builder.setMessage(message)
-    builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener{ dialog, id ->
-      if (positiveCallback != null) {
-        positiveCallback()
-      }
-      dialog.dismiss()
-    })
-    builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener{ dialog, id ->
-      if (negativeCallback != null) {
-        negativeCallback()
-      }
-      dialog.dismiss()
-    })
-    if(activity?.isDestroyed == false && activity?.isFinishing == false) {
-      val dialog: AlertDialog = builder.create()
-      dialog.show()
-    }
-  }
-
+  
   override fun onRequestPermissionsResult(
     requestCode: Int,
     permissions: Array<out String>,
@@ -1105,8 +1067,12 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
         if (grantResults.any {
                 it == PackageManager.PERMISSION_DENIED
             }){
-          showAlert(getString(R.string.important),
+          CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.important),
               getString(R.string.should_show_rationale_camera_permission_message))
+        } else {
+          if (CURRENT_CAMERA_VIEW != null) {
+            takePicture(CURRENT_CAMERA_VIEW!!)
+          }
         }
     }
     if (requestCode == REQUEST_LOCATION_PERMISSION) {
@@ -1114,8 +1080,12 @@ class DeliveryFormFragment : Fragment(), SwipeRefreshLayout.OnRefreshListener {
           it == PackageManager.PERMISSION_DENIED
         }){
         if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
-          showAlert(getString(R.string.important),
+          CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.important),
             getString(R.string.should_show_rationale_location_permission_message))
+        }
+      } else {
+        if (CURRENT_LOCATION_VIEW != null) {
+          getPosition(CURRENT_LOCATION_VIEW!!)
         }
       }
     }

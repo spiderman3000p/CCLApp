@@ -26,6 +26,7 @@ class CreateSignatureActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_create_signature)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        supportActionBar?.setDisplayShowHomeEnabled(true)
         val config = DrawableViewConfig()
         // Set up the user interaction to manually show or hide the system UI.
         drawableView = findViewById<DrawableView>(R.id.paintView)
@@ -67,6 +68,11 @@ class CreateSignatureActivity : AppCompatActivity() {
         when(item.itemId) {
             R.id.default_action -> drawableView.clear()
         }
+        return true
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        onBackPressed()
         return true
     }
 }

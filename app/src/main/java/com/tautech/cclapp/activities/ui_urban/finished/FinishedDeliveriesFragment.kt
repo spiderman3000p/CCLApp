@@ -8,6 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
@@ -20,9 +21,12 @@ import com.symbol.emdk.barcode.*
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
+import com.tautech.cclapp.activities.UrbanPlanificationsActivity
 import com.tautech.cclapp.adapters.PlanificationLineAdapter
 import com.tautech.cclapp.models.Delivery
 import kotlinx.android.synthetic.main.fragment_finished_urban.*
+import kotlinx.android.synthetic.main.fragment_finished_urban.searchEt4
+import kotlinx.android.synthetic.main.fragment_pending.*
 
 class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
     // Variables to hold EMDK related objects
@@ -63,16 +67,33 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
         searchEt4.setOnKeyListener { v, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP) {
                 if (searchEt4.text.isNotEmpty()) {
-                    searchData(searchEt4.text.toString())
+                    searchData(searchEt4.text.toString().toLowerCase())
+                } else {
+                    filteredData.clear()
+                    filteredData.addAll(viewModel.deliveries.value?.filter {
+                        listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(it.deliveryState)
+                    }?.toMutableList() ?: mutableListOf())
                 }
+                mAdapter?.notifyDataSetChanged()
             }
             false
+        }
+        searchEt4.doOnTextChanged { text, start, before, count ->
+            if(text.isNullOrEmpty()){
+                filteredData.clear()
+                filteredData.addAll(viewModel.deliveries.value?.filter {
+                    listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(it.deliveryState)
+                }?.toMutableList() ?: mutableListOf())
+            } else {
+                searchData(text.toString().toLowerCase())
+            }
+            mAdapter?.notifyDataSetChanged()
         }
         initEMDK()
     }
 
     fun initAdapter() {
-        mAdapter = PlanificationLineAdapter(filteredData, viewModel.planification.value, requireContext())
+        mAdapter = PlanificationLineAdapter(filteredData, viewModel.planification.value, activity, PlanificationDetailActivity.DELIVERY_DETAIL)
         certifiedDeliveryLinesRv?.addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.HORIZONTAL))
         certifiedDeliveryLinesRv?.layoutManager = LinearLayoutManager(requireContext())
         certifiedDeliveryLinesRv?.adapter = mAdapter
@@ -222,75 +243,31 @@ class FinishedDeliveriesFragment : Fragment(), EMDKManager.EMDKListener, Scanner
                 dataStr = "$barcodeData  $labelType";
             }
             // Updates EditText with scanned data and type of label on UI thread.
-            searchData(dataStr)
+            searchData(dataStr.toLowerCase())
         }
     }
 
     fun searchData(barcode: String) {
         Log.i(TAG, "barcode readed: $barcode")
-        val readedParts: List<String> = barcode.split("-")
-        Log.i(TAG, "barcode parts: $readedParts")
-        var deliveryLineId: Long = 0
-        var deliveryId: Long = 0
-        var index: Int = -1
-        when (readedParts.size) {
-            3 -> {
-                deliveryId = readedParts[0].toLong()
-                deliveryLineId = readedParts[1].toLong()
-                index = readedParts[2].toInt()
-            }
-            2 -> {
-                deliveryId = readedParts[0].toLong()
-                deliveryLineId = readedParts[1].toLong()
-                index = 0
-            }
-            1 -> {
-                deliveryLineId = readedParts[0].toLong()
-                index = 0
-            }
-            else -> {
-                activity?.runOnUiThread {
-                    showAlert("Error","Error en datos de entrada")
-                }
-                return
-            }
+        var foundDeliveries: List<Delivery>? = listOf()
+        if (viewModel.deliveries.value != null){
+            foundDeliveries = viewModel.deliveries.value?.filter { d ->
+                (d.deliveryNumber.toLowerCase().contains(barcode) ||
+                d.deliveryId.toString().contains(barcode) ||
+                d.referenceDocument?.toLowerCase()?.contains(barcode) == true ||
+                d.receiverName?.toLowerCase()?.contains(barcode) == true) &&
+                listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(d.deliveryState)
+            }!!
         }
-        Log.i(TAG, "delivery id readed: $deliveryId")
-        Log.i(TAG, "delivery line id readed: $deliveryLineId")
-        Log.i(TAG, "index readed: $index")
-        var foundDeliveryLines: List<Delivery>? = listOf()
-        if (viewModel.deliveries.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
-            foundDeliveryLines = viewModel.deliveries.value!!.filter { d ->
-                d.deliveryId == deliveryId && listOf("Cancelled", "Delivered", "Partial", "UnDelivered").contains(d.deliveryState)
-            }
-        } else {
-            Log.e(TAG, "Error con datos de entrada")
-            showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
-            return
-        }
-        if (!foundDeliveryLines.isNullOrEmpty()) {
-            updateStatus("Codigo Encontrado")
+        if (!foundDeliveries.isNullOrEmpty()) {
+            updateStatus(getString(R.string.item_found))
             filteredData.clear()
-            filteredData.addAll(foundDeliveryLines)
+            filteredData.addAll(foundDeliveries)
             activity?.runOnUiThread {
                 mAdapter?.notifyDataSetChanged()
             }
-            Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertified}")
         } else {
-            updateStatus("Codigo No Encontrado")
-        }
-    }
-
-    fun showAlert(title: String, message: String, listener: (() -> Unit?)? = null) {
-        activity?.runOnUiThread {
-            val builder = AlertDialog.Builder(this.requireActivity())
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { _, _ ->
-                listener?.invoke()
-            })
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
+            updateStatus(getString(R.string.item_not_found))
         }
     }
 

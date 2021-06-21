@@ -19,9 +19,11 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.CollapsingToolbarLayout
 import com.google.android.material.snackbar.Snackbar
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.tautech.cclapp.R
 import com.tautech.cclapp.adapters.PlanificationAdapter
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
@@ -62,7 +64,7 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
         db = AppDatabase.getDatabase(this)
         val config = Configuration.getInstance(this)
         if (config.hasConfigurationChanged()) {
-            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", true)
+            CclUtilities.getInstance().showAlert(this,"Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
             return
         }
         viewModel.planifications.observe(this, Observer{_planifications ->
@@ -131,21 +133,21 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
                                 "Error saving planifications to local dabase",
                                 ex)
                             uiThread {
-                                showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                                CclUtilities.getInstance().showAlert(this@UrbanPlanificationsActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                             }
                         } catch (ex: SQLiteConstraintException) {
                             Log.e(TAG,
                                 "Error saving planifications to local dabase",
                                 ex)
                             uiThread {
-                                showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                                CclUtilities.getInstance().showAlert(this@UrbanPlanificationsActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                             }
                         } catch (ex: Exception) {
                             Log.e(TAG,
                                 "Error saving planifications to local dabase",
                                 ex)
                             uiThread {
-                                showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                                CclUtilities.getInstance().showAlert(this@UrbanPlanificationsActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                             }
                         }
                         uiThread {
@@ -185,6 +187,33 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
                         messageTv.visibility = View.VISIBLE
                         Log.e(TAG, "Socket timeout exception: ", e)
                     }
+                }
+            }
+        }
+    }
+
+    private fun fetchBanks(
+        accessToken: String?,
+        idToken: String?,
+        ex: AuthorizationException?,
+    ) {
+        val url = "banks"
+        val dataService: CclDataService? = CclClient.getInstance()?.create(
+            CclDataService::class.java)
+        if (dataService != null && accessToken != null) {
+            doAsync {
+                try {
+                    val call = dataService.getBanks(url, "Bearer $accessToken").execute()
+                    val response = call.body()
+                    response?._embedded?.banks?.let{ banks ->
+                        db?.bankDao()?.insertAll(banks)
+                    }
+                    Log.i(TAG, "banks response: $response")
+                } catch (e: Exception) {
+                    FirebaseCrashlytics.getInstance().recordException(e)
+                    e.printStackTrace()
+                    showSnackbar(getString(R.string.error_fetching_banks))
+                    Log.e(TAG, "exception: ", e)
                 }
             }
         }
@@ -235,9 +264,9 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
             if (resp != null) {
                 if (ex != null) {
                     Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                    showAlert("Error",
+                    CclUtilities.getInstance().showAlert(this,"Error",
                         "No se pudo finalizar la sesion",
-                        true)
+                        this::signOut)
                 } else {
                     mStateManager?.signOut(this)
                     val mainIntent = Intent(this,
@@ -249,9 +278,9 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
                 }
             } else {
                 Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                showAlert("Error",
+                CclUtilities.getInstance().showAlert(this,"Error",
                     "No se pudo finalizar la sesion remota",
-                    true)
+                    this::signOut)
             }
         }
     }
@@ -264,7 +293,7 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
     fun initAdapter() {
         runOnUiThread{
             swiperefresh.setOnRefreshListener {
-                fetchData(this@UrbanPlanificationsActivity::fetchUserPlanifications)
+                fetchData(this::fetchUserPlanifications)
             }
             mAdapter = PlanificationAdapter(planifications, this)
             planificationsRv.layoutManager = LinearLayoutManager(this)
@@ -293,8 +322,9 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
                     hideLoader()
                 }
             }
+            fetchData(this::fetchBanks)
         } else {
-            showAlert("User Data Error", "Some user data are wrong or empty.", true)
+            CclUtilities.getInstance().showAlert(this,"User Data Error", "Some user data are wrong or empty.", this::signOut)
         }
     }
 
@@ -317,24 +347,6 @@ class UrbanPlanificationsActivity : AppCompatActivity(), SwipeRefreshLayout.OnRe
             swiperefresh.isRefreshing = true
             messageTv.visibility = View.GONE
             planificationsRv.visibility = View.GONE
-        }
-    }
-
-    fun showAlert(title: String, message: String, exitToLogin: Boolean = false) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", null)
-            val dialog: AlertDialog = builder.create();
-            if(!isFinishing && !isDestroyed) {
-                dialog.show()
-                dialog.setOnDismissListener {
-                    if (exitToLogin) {
-                        mStateManager?.signOut(this)
-                    }
-                }
-            }
         }
     }
 

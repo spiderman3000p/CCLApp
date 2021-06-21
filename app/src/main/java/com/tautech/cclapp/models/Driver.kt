@@ -6,16 +6,6 @@ import androidx.room.PrimaryKey
 import java.io.Serializable
 @Entity
 data class Driver(
-    @ColumnInfo(name = "createdBy")
-    var createdBy: String?,
-    @ColumnInfo(name = "createdOn")
-    var createdOn: String?,
-    @ColumnInfo(name = "modifiedBy")
-    var modifiedBy: String?,
-    @ColumnInfo(name = "modifiedOn")
-    var modifiedOn: String?,
-    @ColumnInfo(name = "isActive")
-    var isActive: Boolean?,
     @PrimaryKey
     var id: Long,
     @ColumnInfo(name = "identificationType")
@@ -41,6 +31,4 @@ data class Driver(
     @ColumnInfo(name = "licenseNumber")
     var licenseNumber: String?,
     @ColumnInfo(name = "contactType")
-    var contractType: String?): Serializable {
-    
-}
+    var contractType: String?): Serializable

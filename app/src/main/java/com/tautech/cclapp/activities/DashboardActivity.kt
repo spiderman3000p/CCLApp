@@ -16,9 +16,11 @@ import androidx.annotation.MainThread
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.snackbar.Snackbar
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.gson.Gson
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.interfaces.KeycloakDataService
@@ -78,6 +80,7 @@ class DashboardActivity: AppCompatActivity() {
         urbanBtnTv.setOnClickListener{
             val intent = Intent(this, UrbanPlanificationsActivity::class.java)
             //intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK and Intent.FLAG_ACTIVITY_CLEAR_TOP
+            //throw RuntimeException("Test Crash"); // Force a crash
             startActivity(intent)
         }
         nationalBtnTv.setOnClickListener{
@@ -163,7 +166,7 @@ class DashboardActivity: AppCompatActivity() {
     ) {
         mStateManager!!.updateAfterTokenResponse(tokenResponse, authException)
         if (!mStateManager!!.current.isAuthorized) {
-            showAlert("Error", "Authorization Code exchange failed ", true)
+            CclUtilities.getInstance().showAlert(this,"Error", "Authorization Code exchange failed ")
         } else {
             runOnUiThread{
                 displayAuthorized()
@@ -173,22 +176,6 @@ class DashboardActivity: AppCompatActivity() {
 
     override fun onSaveInstanceState(state: Bundle) {
         super.onSaveInstanceState(state)
-        /*Log.i(TAG, "Pausando la actividad. Guardando datos...")
-        // user info is retained to survive activity restarts, such as when rotating the
-        // device or switching apps. This isn't essential, but it helps provide a less
-        // jarring UX when these events occur - data does not just disappear from the view.
-        if (mStateManager?.userInfo != null) {
-            Log.i(TAG, "Guardando keycloak user ${mStateManager?.userInfo}")
-            state.putSerializable(KEY_PROFILE_INFO, mStateManager?.keycloakUser)
-        }
-        if (mStateManager?.driverInfo != null) {
-            Log.i(TAG, "Guardando driver info ${mStateManager?.driverInfo}")
-            state.putSerializable(KEY_DRIVER_INFO, mStateManager?.driverInfo)
-        }
-        if (mStateManager?.userInfo != null) {
-            Log.i(TAG, "Guardando user info ${mStateManager?.userInfo}")
-            state.putString(KEY_USER_INFO, mStateManager?.userInfo.toString())
-        }*/
     }
 
     private fun signOut() {
@@ -225,9 +212,8 @@ class DashboardActivity: AppCompatActivity() {
             if (resp != null) {
                 if (ex != null) {
                     Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                    showAlert("Error",
-                        "No se pudo finalizar la sesion",
-                        true)
+                    CclUtilities.getInstance().showAlert(this,"Error",
+                        "No se pudo finalizar la sesion")
                 } else {
                     mStateManager?.signOut(this)
                     val mainIntent = Intent(this,
@@ -239,9 +225,8 @@ class DashboardActivity: AppCompatActivity() {
                 }
             } else {
                 Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                showAlert("Error",
-                    "No se pudo finalizar la sesion remota",
-                    true)
+                CclUtilities.getInstance().showAlert(this,"Error",
+                    "No se pudo finalizar la sesion remota")
             }
         }
     }
@@ -272,7 +257,7 @@ class DashboardActivity: AppCompatActivity() {
                 "ocurrio una excepcion mientras se recuperaban detalles del perfil de usuario",
                 ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", true)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado")
             }
             return
         }
@@ -308,7 +293,7 @@ class DashboardActivity: AppCompatActivity() {
                                 fetchData(this@DashboardActivity::fetchDriverInfo)
                             }
                         } else {
-                            showAlert("Error", "Tu usuario no es de tipo conductor")
+                            CclUtilities.getInstance().showAlert(this@DashboardActivity,"Error", "Tu usuario no es de tipo conductor")
                             return@doAsync
                         }
                     }
@@ -345,7 +330,7 @@ class DashboardActivity: AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban detalles del conductor", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", true)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado")
             }
             return
         }
@@ -406,6 +391,7 @@ class DashboardActivity: AppCompatActivity() {
                         Log.e(TAG, "Failed to parse driver response")
                     }
                 } catch (e: Exception) {
+                    FirebaseCrashlytics.getInstance().recordException(e)
                     hideLoader()
                     showSnackbar("Fetching driver failed")
                     uiThread {
@@ -432,25 +418,7 @@ class DashboardActivity: AppCompatActivity() {
             progressBar2.visibility = View.VISIBLE
         }
     }
-
-    fun showAlert(title: String, message: String, exitToLogin: Boolean = false) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", null)
-            val dialog: AlertDialog = builder.create();
-            if (!isFinishing && !isDestroyed) {
-                dialog.show();
-                dialog.setOnDismissListener {
-                    if (exitToLogin) {
-                        mStateManager?.signOut(this)
-                    }
-                }
-            }
-        }
-    }
-
+    
     private fun showSnackbar(message: String) {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) {

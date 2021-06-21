@@ -30,6 +30,13 @@ interface CclDataService {
 
     @GET
     @Headers("Content-Type: application/json")
+    fun getBanks(
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<BanksResponse>
+
+    @GET
+    @Headers("Content-Type: application/json")
     fun getDeliveryDeliveryLines(
         @Url url: String,
         @Header("Authorization") authorization: String
@@ -63,6 +70,27 @@ interface CclDataService {
         @Url url: String,
         @Header("Authorization") authorization: String): Call<Void>
 
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getPlanificationDetails3(
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<PlanificationDetails>
+
+    @GET
+    @Headers("Content-Type: application/json")
+    fun getPlanificationPaymentDetails(
+        @Url url: String,
+        @Header("Authorization") authorization: String
+    ): Call<PlanificationPaymentDetailsResponse>
+
+    @POST
+    @Headers("Content-Type: application/json")
+    fun legalizePlanificationPayments(
+        @Url url: String,
+        @Body payments: PaymentLegalization,
+        @Header("Authorization") authorization: String): Call<List<SavePaymentResponse>>
+
     @POST
     @Headers("Content-Type: application/json")
     fun changeDeliveryState(
@@ -94,10 +122,8 @@ interface CclDataService {
 
     @POST
     @Multipart
-    fun savePlanificationStateFormFile(
+    fun uploadFile(
         @Url url: String,
-        /*@Part("name") filename: RequestBody,
-        @Part("mimeType") mimeType: RequestBody,*/
         @Part filePart: MultipartBody.Part,
         @Header("customer-id") customerId: Long?,
         @Header("Authorization") authorization: String
@@ -113,14 +139,6 @@ interface CclDataService {
 
     @GET
     @Headers("Content-Type: application/json")
-    fun getDeliveredItems(
-        @Query(value = "") deliveryId: Long,
-        @Header("Authorization") authorization: String,
-        @Url url: String = "delivery/deliveredItems"
-    ): Call<Void>
-
-    @GET
-    @Headers("Content-Type: application/json")
     fun getPaymentMethods(
         @Header("Authorization") authorization: String,
         @Url url: String = "paymentMethods"): Call<PaymentMethodsResponse>
@@ -128,8 +146,16 @@ interface CclDataService {
     @POST
     @Headers("Content-Type: application/json")
     fun saveDeliveryPaymentDetails(
-        @Body paymentDetails: DeliveryPaymentDetail,
-        @Header("Authorization") authorization: String,
-        @Url url: String = "paymentDetails"
-    ): Call<Void>
+        @Url url: String,
+        @Body paymentDetails: List<PendingToUploadPayment>,
+        @Header("Authorization") authorization: String
+    ): Call<ArrayList<SavePaymentResponse>>
+
+    @POST
+    @Headers("Content-Type: application/json")
+    fun saveDeliveryPayment(
+        @Url url: String,
+        @Body paymentDetail: PlanificationPaymentDetail,
+        @Header("Authorization") authorization: String
+    ): Call<SavePaymentResponse>
 }

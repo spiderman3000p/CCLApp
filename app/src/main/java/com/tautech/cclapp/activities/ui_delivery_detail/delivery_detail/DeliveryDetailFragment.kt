@@ -103,6 +103,11 @@ class DeliveryDetailFragment : Fragment() {
   }
 
   fun getCompletedDeliveryLinesProgress(): Int {
-    return ((viewModel.delivery.value?.totalDelivered ?: 0) * 100) / (viewModel.delivery.value?.totalQuantity ?: 1)
+    val totalQuantity = viewModel.delivery.value?.totalQuantity ?: 0
+    return if(totalQuantity > 0){
+      ((viewModel.delivery.value?.totalDelivered ?: 0) * 100) / totalQuantity
+    } else {
+      0
+    }
   }
 }

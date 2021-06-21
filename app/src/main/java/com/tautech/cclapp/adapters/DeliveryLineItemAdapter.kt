@@ -8,16 +8,19 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.recyclerview.widget.RecyclerView
 import com.tautech.cclapp.R
-import com.tautech.cclapp.activities.ManageDeliveryActivityViewModel
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.delivery_line_item.view.*
 import kotlinx.android.synthetic.main.last_readed_item.view.referenceTv
 import kotlinx.android.synthetic.main.last_readed_item.view.skuDescriptionTv
+
 val TAG = "DeliveryLineItemAdapter"
-class DeliveryLineItemAdapter(private val dataList: MutableList<DeliveryLine>, val editable: Boolean = false, val context: Context, val viewModel: ManageDeliveryActivityViewModel? = null):
+class DeliveryLineItemAdapter(private val dataList: MutableList<DeliveryLine>, val editable: Boolean = false, val context: Context,
+                              private var onDeliveryLineChangedCallback: ((deliveryLine: DeliveryLine) -> Unit)? = null):
     RecyclerView.Adapter<DeliveryLineItemAdapter.MyViewHolder>() {
 
-    class MyViewHolder(var itemView: View, var editable: Boolean = false, var viewModel: ManageDeliveryActivityViewModel? = null): RecyclerView.ViewHolder(itemView), SeekBar.OnSeekBarChangeListener {
+    class MyViewHolder(var itemView: View, var editable: Boolean = false,
+                       var onDeliveryLineChangedCallback: ((deliveryLine: DeliveryLine) -> Unit)? = null
+    ): RecyclerView.ViewHolder(itemView), SeekBar.OnSeekBarChangeListener {
         var deliveryLine: DeliveryLine? = null
         fun bindItems(_deliveryLine: DeliveryLine, editable: Boolean = false) {
             deliveryLine = _deliveryLine
@@ -45,10 +48,12 @@ class DeliveryLineItemAdapter(private val dataList: MutableList<DeliveryLine>, v
                         deliveryLine?.delivered = progress
                     }
                     Log.i(TAG, "delivery line changed: $deliveryLine")
-                    if(viewModel != null){
-                        viewModel?.changedDeliveryLine?.postValue(deliveryLine)
-                    } else {
-                        Log.i(TAG, "no se recibio view model o es invalido")
+                    onDeliveryLineChangedCallback?.let{
+                        it(deliveryLine!!)
+                    }.also {
+                        if (it == null) {
+                            Log.i(TAG, "no se recibio view model o es invalido")
+                        }
                     }
                 } else {
                     Log.i(TAG, "delivery line es invalido")
@@ -67,7 +72,7 @@ class DeliveryLineItemAdapter(private val dataList: MutableList<DeliveryLine>, v
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MyViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.delivery_line_item, parent, false)
-        return MyViewHolder(view, editable, viewModel)
+        return MyViewHolder(view, editable, onDeliveryLineChangedCallback)
     }
 
     override fun onBindViewHolder(holder: MyViewHolder, position: Int) {

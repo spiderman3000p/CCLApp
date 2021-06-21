@@ -20,26 +20,35 @@ import com.symbol.emdk.barcode.*
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.ui_delivery_detail.delivery_form.DeliveryFormFragment
 import com.tautech.cclapp.adapters.DeliveryLineItemAdapter
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.models.DeliveryLine
 import kotlinx.android.synthetic.main.fragment_delivery_items.*
 import org.jetbrains.anko.doAsync
 
-class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
+class ManageDeliveryItemsFragment(var editable: Boolean = false,
+                                  private var onDeliveryLineChangedCallback: ((deliveryLine: DeliveryLine) -> Unit) ? = null
+) : Fragment(), EMDKManager.EMDKListener, Scanner.StatusListener, Scanner.DataListener {
   // Variables to hold EMDK related objects
   private var emdkManager: EMDKManager? = null;
   private var barcodeManager: BarcodeManager? = null;
   private var scanner: Scanner? = null;
   var filteredData: MutableList<DeliveryLine> = mutableListOf()
   val TAG = "MANAGE_DELIVERY_ITEMS_FRAGMENT"
+  private lateinit var viewModel: ManageDeliveryActivityViewModel
   private var mAdapter: DeliveryLineItemAdapter? = null
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    val _viewModel: ManageDeliveryActivityViewModel by activityViewModels()
+    viewModel = _viewModel
+  }
   override fun onCreateView(
     inflater: LayoutInflater,
     container: ViewGroup?,
     savedInstanceState: Bundle?
   ): View? {
     val root = inflater.inflate(R.layout.fragment_delivery_items, container, false)
-    Log.i(TAG, "onCreateView DeliveryItemsFragment")
-
+    Log.i(TAG, "onCreateView ManageDeliveryItemsFragment")
     return root
   }
 
@@ -48,7 +57,6 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayHomeAsUpEnabled(true)
     (activity as ManageDeliveryActivity).supportActionBar?.setDisplayShowHomeEnabled(true)
     initAdapter()
-    val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
     viewModel.deliveryLines.observe(viewLifecycleOwner, Observer{deliveryLines ->
       Log.i(TAG, "delivery lines observed: $deliveryLines")
       if(!deliveryLines.isNullOrEmpty()) {
@@ -76,8 +84,7 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
 
   fun initAdapter() {
     activity?.runOnUiThread{
-      val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
-      mAdapter = DeliveryLineItemAdapter(filteredData, editable, requireContext(), viewModel)
+      mAdapter = DeliveryLineItemAdapter(filteredData, editable, requireContext(), this.onDeliveryLineChangedCallback)
       itemsRv.layoutManager = LinearLayoutManager(requireContext())
       itemsRv.adapter = mAdapter
     }
@@ -233,7 +240,6 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
     var foundDeliveryLines: List<DeliveryLine> = listOf()
     //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
     if (barcode.isNotEmpty()) {
-      val viewModel: ManageDeliveryActivityViewModel by activityViewModels()
       foundDeliveryLines = viewModel.deliveryLines.value?.filter { d ->
         d.packetType.toLowerCase().contains(barcode.toLowerCase()) ||
         d.reference.toLowerCase().contains(barcode.toLowerCase()) ||
@@ -243,7 +249,7 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
     } else {
       Log.e(TAG, "Error con datos de entrada")
       activity?.runOnUiThread {
-        showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
+        CclUtilities.getInstance().showAlert(requireActivity(),"ERROR DE ENTRADA", "Error con datos de entrada")
       }
       return
     }
@@ -258,20 +264,7 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
       updateStatus(getString(R.string.item_not_found))
     }
   }
-
-  fun showAlert(title: String, message: String, listener: (() -> Unit?)? = null) {
-    activity?.runOnUiThread {
-      val builder = AlertDialog.Builder(this.requireActivity())
-      builder.setTitle(title)
-      builder.setMessage(message)
-      builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { _, _ ->
-        listener?.invoke()
-      })
-      val dialog: AlertDialog = builder.create()
-      dialog.show()
-    }
-  }
-
+  
   private fun setConfig() {
     try {
       // Get scanner config
@@ -314,10 +307,10 @@ class ManageDeliveryItemsFragment(var editable: Boolean = false) : Fragment(), E
 
   companion object{
     var mInstance: ManageDeliveryItemsFragment? = null
-    fun getInstance(): ManageDeliveryItemsFragment?{
+    fun getInstance(onDeliveryLineChangedCallback: ((deliveryLine: DeliveryLine) -> Unit) ? = null): ManageDeliveryItemsFragment?{
       if(mInstance == null){
         Log.i("MANAGE_DELIVERY_ITEMS_FRAGMENT", "instancia de ManageDeliveryItemsFragment es null, creando una nueva")
-        mInstance = ManageDeliveryItemsFragment(true)
+        mInstance = ManageDeliveryItemsFragment(true, onDeliveryLineChangedCallback)
       }
       return mInstance
     }

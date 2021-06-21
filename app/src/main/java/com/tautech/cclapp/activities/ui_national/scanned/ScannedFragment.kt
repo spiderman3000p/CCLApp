@@ -8,6 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
@@ -66,6 +67,9 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                 }
             }
             false
+        }
+        searchEt4.doOnTextChanged { text, start, before, count ->
+
         }
         initEMDK()
     }
@@ -228,36 +232,24 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
                 deliveryLineId = readedParts[1].toLong()
                 index = 0
             }
-            1 -> {
-                deliveryLineId = readedParts[0].toLong()
-                index = 0
-            }
-            else -> {
-                activity?.runOnUiThread {
-                    showAlert("Error","Error en datos de entrada")
-                }
-                return
-            }
         }
         Log.i(TAG, "delivery id readed: $deliveryId")
         Log.i(TAG, "delivery line id readed: $deliveryLineId")
         Log.i(TAG, "index readed: $index")
         var foundDeliveryLines: List<DeliveryLine>? = listOf()
         //val foundByIds = db?.deliveryLineDao()?.loadAllByIds(intArrayOf(deliveryLineId))
-        foundDeliveryLines = if (viewModel.certifiedDeliveryLines.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
-            viewModel.certifiedDeliveryLines.value!!.filter { d ->
+        foundDeliveryLines = if (viewModel.pendingDeliveryLines.value != null && deliveryId > 0 && deliveryLineId > 0 && index > -1) {
+            viewModel.pendingDeliveryLines.value!!.filter { d ->
                 d.deliveryId == deliveryId && d.id == deliveryLineId && d.index == index
             }
-        } else if (viewModel.certifiedDeliveryLines.value != null && deliveryLineId > 0) {
-            viewModel.certifiedDeliveryLines.value!!.filter { d ->
-                d.id == deliveryLineId
-            }
         } else {
-            Log.e(TAG, "Error con datos de entrada")
-            activity?.runOnUiThread {
-                showAlert("ERROR DE ENTRADA", "Error con datos de entrada")
-            }
-            null
+            viewModel.pendingDeliveryLines.value?.filter { d ->
+                val _barcode = barcode.toLowerCase()
+                (d.deliveryId.toString().contains(_barcode) ||
+                        d.reference.toLowerCase().contains(_barcode) ||
+                        d.description.toLowerCase().contains(_barcode)
+                        )
+            }!!
         }
         if (!foundDeliveryLines.isNullOrEmpty()) {
             updateStatus("Codigo Encontrado")
@@ -269,19 +261,6 @@ class ScannedFragment : Fragment(), EMDKManager.EMDKListener, Scanner.StatusList
             Log.i(TAG, "planificaciones certificadas previas ${viewModel.planification.value?.totalCertified}")
         } else {
             updateStatus("Codigo No Encontrado")
-        }
-    }
-
-    fun showAlert(title: String, message: String, listener: (() -> Unit?)? = null) {
-        activity?.runOnUiThread {
-            val builder = AlertDialog.Builder(this.requireActivity())
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { _, _ ->
-                listener?.invoke()
-            })
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
         }
     }
 

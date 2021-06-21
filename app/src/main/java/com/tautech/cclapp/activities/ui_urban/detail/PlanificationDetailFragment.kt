@@ -13,6 +13,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.PlanificationDetailActivity
 import com.tautech.cclapp.activities.PlanificationDetailActivityViewModel
@@ -55,10 +56,10 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
             Log.e(TAG, "Database error found", ex)
         }
         if (config.hasConfigurationChanged()) {
-            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
+            CclUtilities.getInstance().showAlert(requireActivity(),"Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
         }
         if (!mStateManager!!.current.isAuthorized) {
-            showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+            CclUtilities.getInstance().showAlert(requireActivity(),"Sesion expirada", "Su sesion ha expirado", this::signOut)
         }
         viewModel.deliveries.observe(viewLifecycleOwner, Observer{ deliveries ->
             refreshTotals()
@@ -112,12 +113,12 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
     private fun refreshTotals(){
         activity?.runOnUiThread {
             planificationCompletedProgressTv?.text =
-                "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.completed)}"
+                "${getCompletedDeliveryLinesProgress()}% ${getString(R.string.delivered)}"
             planificationCompletedProgressBar?.progress = getCompletedDeliveryLinesProgress()
             totalItemsChip?.text =
                 "${viewModel.planification.value?.totalDelivered}/${viewModel.planification.value?.totalDeliveries ?: 0}"
             deliveriesCompletedProgressTv?.text =
-                "${getCompletedDeliveriesProgress()}% ${getString(R.string.completed)}"
+                "${getCompletedDeliveriesProgress()}% ${getString(R.string.delivered)}"
             deliveriesCompletedProgressBar?.progress = getCompletedDeliveriesProgress()
             deliveryLinesCountChip.text =
                 "${viewModel.planification.value?.totalDeliveredLines}/${viewModel.planification.value?.totalUnits ?: 0}"
@@ -139,7 +140,7 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban las definicones de formularios", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(requireActivity(),"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -177,30 +178,31 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
                             Log.e(TAG,
                                 "Error guardando state form definitions en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error),
+                            CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.database_error),
                                 getString(R.string.database_error_saving_state_form_definitions))
                         } catch (ex: SQLiteConstraintException) {
                             Log.e(TAG,
                                 "Error guardando state form definitions en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error),
+                            CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.database_error),
                                 getString(R.string.database_error_saving_state_form_definitions))
                         } catch (ex: Exception) {
+                            FirebaseCrashlytics.getInstance().recordException(ex)
                             Log.e(TAG,
                                 "Error guardando state form definitions en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error),
+                            CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.database_error),
                                 getString(R.string.database_error_saving_state_form_definitions))
                         }
                     }
                 } catch(toe: SocketTimeoutException) {
                     Log.e(TAG, "Error de red cargando state form definitions", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     Log.e(TAG,
                         "Error de red cargando state form definitions",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(requireActivity(),getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
         }
@@ -213,38 +215,5 @@ class PlanificationDetailFragment : Fragment(), SwipeRefreshLayout.OnRefreshList
 
     private fun signOut() {
         mStateManager?.signOut(requireContext())
-    }
-
-    fun showAlert(title: String, message: String) {
-        activity?.runOnUiThread {
-            val builder = AlertDialog.Builder(requireContext())
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", null)
-            val dialog: AlertDialog = builder.create();
-            dialog.show();
-        }
-    }
-
-    fun showAlert(title: String, message: String, positiveCallback: (() -> Unit)? = null, negativeCallback: (() -> Unit)? = null) {
-        val builder = AlertDialog.Builder(requireContext())
-        builder.setTitle(title)
-        builder.setMessage(message)
-        builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener{ dialog, id ->
-            if (positiveCallback != null) {
-                positiveCallback()
-            }
-            dialog.dismiss()
-        })
-        builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener{ dialog, id ->
-            if (negativeCallback != null) {
-                negativeCallback()
-            }
-            dialog.dismiss()
-        })
-        if(this.activity?.isDestroyed == false && this.activity?.isFinishing == false) {
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
-        }
     }
 }

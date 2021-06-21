@@ -1,16 +1,13 @@
 package com.tautech.cclapp.activities
 
-import android.content.DialogInterface
 import android.content.Intent
 import android.database.sqlite.*
 import android.os.Bundle
 import android.util.Log
 import android.view.Menu
-import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import androidx.activity.viewModels
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.navigation.findNavController
@@ -19,8 +16,10 @@ import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.snackbar.Snackbar
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.models.DeliveryLine
@@ -78,7 +77,7 @@ class CertificateActivity : AppCompatActivity() {
             Log.e(TAG, "Database error found", ex)
         }
         if (!mStateManager!!.current.isAuthorized) {
-            showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             return
         }
         viewModel.planification.observe(this, Observer { _planification ->
@@ -166,7 +165,7 @@ class CertificateActivity : AppCompatActivity() {
             if (resp != null) {
                 if (ex != null) {
                     Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                    showAlert("Error",
+                    CclUtilities.getInstance().showAlert(this,"Error",
                         "No se pudo finalizar la sesion",
                         this::signOut)
                 } else {
@@ -180,7 +179,7 @@ class CertificateActivity : AppCompatActivity() {
                 }
             } else {
                 Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                showAlert("Error",
+                CclUtilities.getInstance().showAlert(this,"Error",
                     "No se pudo finalizar la sesion remota",
                     this::signOut)
             }
@@ -200,7 +199,7 @@ class CertificateActivity : AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban las certificaciones", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -231,19 +230,20 @@ class CertificateActivity : AppCompatActivity() {
                             Log.e(TAG,
                                 "Error actualizando planificacion en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error),
+                            CclUtilities.getInstance().showAlert(this@CertificateActivity,getString(R.string.database_error),
                                 getString(R.string.database_error_saving_planifications))
                         } catch (ex: SQLiteConstraintException) {
                             Log.e(TAG,
                                 "Error actualizando planificacion en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error),
+                            CclUtilities.getInstance().showAlert(this@CertificateActivity,getString(R.string.database_error),
                                 getString(R.string.database_error_saving_planifications))
                         } catch (ex: Exception) {
+                            FirebaseCrashlytics.getInstance().recordException(ex)
                             Log.e(TAG,
                                 "Error actualizando planificacion en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error),
+                            CclUtilities.getInstance().showAlert(this@CertificateActivity, getString(R.string.database_error),
                                 getString(R.string.database_error_saving_planifications))
                         }
                     } else {
@@ -402,7 +402,7 @@ class CertificateActivity : AppCompatActivity() {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion mientras se recuperaban lineas de planificacion", ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -450,6 +450,7 @@ class CertificateActivity : AppCompatActivity() {
                     Log.e(TAG, "Failed to parse planification lines response", jsonEx)
                     showSnackbar("Failed to parse planification lines")
                 } catch (e: Exception) {
+                    FirebaseCrashlytics.getInstance().recordException(e)
                     hideLoader()
                     showRetryMessage("Fetching user planification lines failed",
                         this@CertificateActivity::fetchPlanificationLinesReq)
@@ -470,7 +471,7 @@ class CertificateActivity : AppCompatActivity() {
                 "ocurrio una excepcion mientras se recuperaban los delivery lines de planificacion",
                 ex)
             if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
+                CclUtilities.getInstance().showAlert(this,"Sesion expirada", "Su sesion ha expirado", this::signOut)
             }
             return
         }
@@ -529,6 +530,7 @@ class CertificateActivity : AppCompatActivity() {
                     Log.e(TAG, "Failed to parse planification lines response", jsonEx)
                     showSnackbar("Failed to parse planification lines")
                 } catch (e: Exception) {
+                    FirebaseCrashlytics.getInstance().recordException(e)
                     hideLoader()
                     showRetryMessage("Fetching user planification lines failed",
                         this@CertificateActivity::fetchPlanificationDeliveryLinesReq)
@@ -556,173 +558,6 @@ class CertificateActivity : AppCompatActivity() {
         }
     }
 
-   override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        val inflater: MenuInflater = menuInflater
-        inflater.inflate(R.menu.menu_planification, menu)
-        menu.findItem(R.id.startRoute).isVisible = false
-        menu.findItem(R.id.endRoute).isVisible = false
-
-        when(planification?.state) {
-            "Dispatched" -> {
-                menu.findItem(R.id.startRoute).isVisible = true
-                menu.findItem(R.id.endRoute).isVisible = false
-            }
-            "OnGoing" -> {
-                menu.findItem(R.id.startRoute).isVisible = false
-                menu.findItem(R.id.endRoute).isVisible = true
-            }
-            "Cancelled" -> {
-                menu.findItem(R.id.startRoute).isVisible = true
-                menu.findItem(R.id.endRoute).isVisible = false
-            }
-            "Complete" -> {
-                menu.findItem(R.id.startRoute).isVisible = false
-                menu.findItem(R.id.endRoute).isVisible = false
-            }
-        }
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle item selection
-        return when (item.itemId) {
-            R.id.startRoute -> {
-                askForChangeState("OnGoing")
-                true
-            }
-            R.id.endRoute -> {
-                askForChangeState("Complete")
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu?): Boolean {
-        when(planification?.state) {
-            "Dispatched" -> {
-                menu?.findItem(R.id.startRoute)?.isVisible = true
-                menu?.findItem(R.id.endRoute)?.isVisible = false
-            }
-            "OnGoing" -> {
-                menu?.findItem(R.id.startRoute)?.isVisible = false
-                menu?.findItem(R.id.endRoute)?.isVisible = true
-            }
-            "Cancelled" -> {
-                menu?.findItem(R.id.startRoute)?.isVisible = true
-                menu?.findItem(R.id.endRoute)?.isVisible = false
-            }
-            "Complete" -> {
-                menu?.findItem(R.id.startRoute)?.isVisible = false
-                menu?.findItem(R.id.endRoute)?.isVisible = false
-            }
-        }
-        return super.onPrepareOptionsMenu(menu)
-    }
-
-    fun askForChangeState(state: String) {
-        newState = state
-        when(state) {
-            "Cancelled" -> {
-                showAlert(getString(R.string.cancel_planification),
-                    getString(R.string.cancel_planification_prompt),
-                    this::changePlanificationState)
-            }
-            "OnGoing" -> {
-                showAlert(getString(R.string.start_route),
-                    getString(R.string.start_route_prompt),
-                    this::changePlanificationState)
-            }
-            "Complete" -> {
-                showAlert(getString(R.string.complete_route),
-                    getString(R.string.complete_route_prompt),
-                    this::changePlanificationState)
-            }
-        }
-    }
-
-    fun changePlanificationState() {
-        fetchData(this::changePlanificationState)
-    }
-
-    private fun changePlanificationState(
-        accessToken: String?,
-        idToken: String?,
-        ex: AuthorizationException?,
-    ) {
-        if (ex != null) {
-            Log.e(TAG, "ocurrio una excepcion mientras se recuperaban lineas de planificacion", ex)
-            if (ex.type == 2 && ex.code == 2002 && ex.error == "invalid_grant") {
-                showAlert("Sesion expirada", "Su sesion ha expirado", this::signOut)
-            }
-            return
-        }
-        hideViews()
-        showLoader()
-        showSnackbar("Solicitando finalizacion de ruta...")
-        val url = "planification/${planification?.id}/changeState?newState=$newState"
-        //Log.i(TAG_PLANIFICATIONS, "constructed user endpoint: $userInfoEndpoint")
-        val dataService: CclDataService? = CclClient.getInstance()?.create(
-            CclDataService::class.java)
-        if (dataService != null && accessToken != null) {
-            doAsync {
-                try {
-                    /*val call = dataService.finalizePlanificationLoad(url,
-                        "Bearer $accessToken")
-                        .execute()*/
-                    val call = dataService.changePlanificationState(url,
-                        "Bearer $accessToken")
-                        .execute()
-                    val response = call.body()
-                    Log.i(TAG,
-                        "respuesta al cambiar estado de planificacion ${planification?.id}: ${response}")
-                    hideLoader()
-                    showViews()
-                    routeStarted = true
-                    planification?.state = newState
-                    Log.i(TAG, "posting value to planification")
-                    viewModel.planification.postValue(planification)
-                    try {
-                        db?.planificationDao()?.update(planification!!)
-                    } catch (ex: SQLiteException) {
-                        Log.e(TAG,
-                            "Error actualizando planificacion en la BD local",
-                            ex)
-                        showAlert(getString(R.string.database_error),
-                            getString(R.string.database_error_saving_planifications))
-                    } catch (ex: SQLiteConstraintException) {
-                        Log.e(TAG,
-                            "Error actualizando planificacion en la BD local",
-                            ex)
-                        showAlert(getString(R.string.database_error),
-                            getString(R.string.database_error_saving_planifications))
-                    } catch (ex: Exception) {
-                        Log.e(TAG,
-                            "Error actualizando planificacion en la BD local",
-                            ex)
-                        showAlert(getString(R.string.database_error),
-                            getString(R.string.database_error_saving_planifications))
-                    }
-                    Log.i(TAG, "finalize planification load response $response")
-                } catch (toe: SocketTimeoutException) {
-                    Log.e(TAG, "Network error when finalizing planification load", toe)
-                    showAlert(getString(R.string.network_error_title),
-                        getString(R.string.network_error))
-                } catch (ioEx: IOException) {
-                    Log.e(TAG,
-                        "Network error when finalizing planification load",
-                        ioEx)
-                    showAlert(getString(R.string.network_error_title),
-                        getString(R.string.network_error))
-                } catch (jsonEx: JSONException) {
-                    Log.e(TAG, "Failed to parse finalizing planification response", jsonEx)
-                    showAlert(getString(R.string.parsing_error_title),
-                        getString(R.string.parsing_error))
-                }
-            }
-        }
-    }
-
     private fun fetchData(callback: ((String?, String?, AuthorizationException?) -> Unit)) {
         Log.i(TAG, "Fetching user planifications...")
         try {
@@ -730,33 +565,6 @@ class CertificateActivity : AppCompatActivity() {
                 callback)
         }catch (ex: AuthorizationException) {
             Log.e(TAG, "error fetching data", ex)
-        }
-    }
-
-    fun showAlert(
-        title: String,
-        message: String,
-        positiveCallback: (() -> Unit)? = null,
-        negativeCallback: (() -> Unit)? = null,
-    ) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { dialog, id ->
-                if (positiveCallback != null) {
-                    positiveCallback()
-                }
-                dialog.dismiss()
-            })
-            builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener { dialog, id ->
-                if (negativeCallback != null) {
-                    negativeCallback()
-                }
-                dialog.dismiss()
-            })
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
         }
     }
 

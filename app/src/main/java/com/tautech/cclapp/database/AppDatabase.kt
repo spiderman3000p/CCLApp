@@ -7,13 +7,21 @@ import androidx.room.RoomDatabase
 import com.tautech.cclapp.daos.*
 import com.tautech.cclapp.models.*
 
-@Database(entities = [Planification::class, DeliveryLine::class, Delivery::class, Certification::class, PendingToUploadCertification::class, StateFormDefinition::class, StateFormField::class], version = 1)
+@Database(entities = [Planification::class, DeliveryLine::class, Delivery::class,
+    PlanificationPaymentDetail::class, Certification::class, PendingToUploadCertification::class,
+    StateFormDefinition::class, StateFormField::class, PendingToUploadPayment::class,
+    Bank::class, Payment::class, PendingToUploadLegalization::class], version = 1)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun planificationDao(): PlanificationDao
     abstract fun deliveryLineDao(): DeliveryLineDao
     abstract fun deliveryDao(): DeliveryDao
+    abstract fun bankDao(): BankDao
+    abstract fun paymentDao(): PaymentDao
+    abstract fun deliveryPaymentDetailDao(): PlanificationPaymentDetailDao
     abstract fun certificationDao(): CertifiedDeliveryLineDao
     abstract fun pendingToUploadCertificationDao(): PendingToUploadCertificationDao
+    abstract fun pendingToUploadPaymentDao(): PendingToUploadPaymentDao
+    abstract fun pendingToUploadLegalizationDao(): PendingToUploadLegalizationDao
     abstract fun stateFormDefinitionDao(): StateFormDefinitionDao
     abstract fun stateFormFieldDao(): StateFormFieldDao
     companion object{

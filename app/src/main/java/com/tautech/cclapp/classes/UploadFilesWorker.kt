@@ -12,6 +12,7 @@ import androidx.core.content.FileProvider
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.hasKeyWithValueOfType
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
 import com.tautech.cclapp.services.CclClient
@@ -30,14 +31,12 @@ class UploadFilesWorker
     workerParams: WorkerParameters,
 ) : Worker(appContext, workerParams) {
     private val TAG = "UPLOAD_FILES_WORKER"
-    private var retrofitClient: Retrofit? = null
     private val MAX_REINTENT = 3
     private var failedRequestsCounter = 0
     var db: AppDatabase? = null
     private var mStateManager: AuthStateManager? = null
 
     override fun doWork(): Result {
-        retrofitClient = CclClient.getInstance()
         mStateManager = AuthStateManager.getInstance(appContext)
         try {
             db = AppDatabase.getDatabase(appContext)
@@ -82,8 +81,10 @@ class UploadFilesWorker
         }
         if (inputData.hasKeyWithValueOfType<String>("itemName") &&
             inputData.hasKeyWithValueOfType<String>("fileTag") &&
-            inputData.hasKeyWithValueOfType<Int>("savedFormId") &&
+            inputData.hasKeyWithValueOfType<Long>("savedFormId") &&
+            inputData.hasKeyWithValueOfType<String>("type") &&
             inputData.hasKeyWithValueOfType<Long>("customerId")) {
+            val type = inputData.getString("type") // form || payment
             val itemName = inputData.getString("itemName")
             val fileTag = inputData.getString("fileTag")
             val savedFormId = inputData.getLong("savedFormId", 0)
@@ -108,10 +109,9 @@ class UploadFilesWorker
                             CclDataService::class.java)
                         if (dataService != null && mStateManager?.current?.accessToken != null) {
                             Log.i(TAG, "uploading file ${itemName}...")
-                            val urlSaveForm =
-                                "delivery/state-history/upload-file/${savedFormId}?propertyName=${itemName}"
+                            val urlSaveForm = if (type == "form") "delivery/state-history/upload-file/${savedFormId}?propertyName=${itemName}" else "delivery/payment-detail/upload-file/${savedFormId}?propertyName=photo"
                             try {
-                                val callSaveForm = dataService.savePlanificationStateFormFile(
+                                val callSaveForm = dataService.uploadFile(
                                     urlSaveForm,
                                     body,
                                     customerId,
@@ -121,6 +121,7 @@ class UploadFilesWorker
                                     "save file ${itemName} response code ${callSaveForm.code()}")
                                 if(callSaveForm.code() == 200){
                                     MyWorkerManagerService.filesToUpload.remove(fileTag)
+                                    return Result.success()
                                 }
                             } catch (toe: SocketTimeoutException) {
                                 Log.e(TAG, "Network error when saving ${itemName} file", toe)
@@ -168,6 +169,7 @@ class UploadFilesWorker
                         Log.e(TAG, "mimetype de ${itemName} es invalido")
                     }
                 } catch(ex: Exception){
+                    FirebaseCrashlytics.getInstance().recordException(ex)
                     Log.e(TAG, "ocurrio una excepcion al parsear uri a archivo", ex)
                 }
             } else {
@@ -188,6 +190,7 @@ class UploadFilesWorker
             cursor.moveToFirst()
             cursor.getString(columnIndex)
         } catch(ex: Exception) {
+            FirebaseCrashlytics.getInstance().recordException(ex)
             Log.e(TAG, "Excepcion encontrada al obtener path de uri", ex)
             null
         } finally {

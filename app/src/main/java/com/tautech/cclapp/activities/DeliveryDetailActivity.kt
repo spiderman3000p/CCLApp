@@ -16,9 +16,11 @@ import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.snackbar.Snackbar
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.gson.Gson
 import com.tautech.cclapp.R
 import com.tautech.cclapp.classes.AuthStateManager
+import com.tautech.cclapp.classes.CclUtilities
 import com.tautech.cclapp.classes.Configuration
 import com.tautech.cclapp.database.AppDatabase
 import com.tautech.cclapp.interfaces.CclDataService
@@ -38,6 +40,7 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 
 class DeliveryDetailActivity : AppCompatActivity() {
+    private var deliveryLinesLoaded: Boolean = false
     private val MANAGE_ACTIVITY = 1
     private var newState: String = ""
     val TAG = "DELIVERY_DETAIL_ACTIVITY"
@@ -77,11 +80,11 @@ class DeliveryDetailActivity : AppCompatActivity() {
             Log.e(TAG, "Database error found", ex)
         }
         if (config.hasConfigurationChanged()) {
-            showAlert("Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Error", "La configuracion de sesion ha cambiado. Se cerrara su sesion", this::signOut)
             return
         }
         if (!mStateManager!!.current.isAuthorized) {
-            showAlert("Error", "Sesion Expirada", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Error", "Sesion Expirada", this::signOut)
             return
         }
         viewModel.planification.observe(this, Observer{_planification ->
@@ -89,6 +92,7 @@ class DeliveryDetailActivity : AppCompatActivity() {
             if (_planification != null) {
                 planification = _planification
                 invalidateOptionsMenu()
+                checkManageBtnStatus()
             }
         })
         viewModel.delivery.observe(this, Observer{_del ->
@@ -97,6 +101,8 @@ class DeliveryDetailActivity : AppCompatActivity() {
                 delivery = _del
                 if(viewModel.deliveryLines.value.isNullOrEmpty()) {
                     getDeliveryLines()
+                } else {
+                    deliveryLinesLoaded = true
                 }
                 invalidateOptionsMenu()
                 checkManageBtnStatus()
@@ -174,10 +180,16 @@ class DeliveryDetailActivity : AppCompatActivity() {
     }
 
     fun checkManageBtnStatus(){
-        if (listOf("OnGoing", "Planned", "DeliveryPlanned", "Created", "UnDelivered").contains(delivery?.deliveryState)) {
-            manageBtn.visibility = View.VISIBLE
-        } else {
-            manageBtn.visibility = View.GONE
+        runOnUiThread {
+            if (listOf("OnGoing", "Planned", "DeliveryPlanned", "Created", "UnDelivered").contains(
+                    delivery?.deliveryState
+                ) && deliveryLinesLoaded && delivery != null && planification != null &&
+                !isFinishing && !isDestroyed
+            ) {
+                manageBtn.visibility = View.VISIBLE
+            } else {
+                manageBtn.visibility = View.GONE
+            }
         }
     }
 
@@ -215,7 +227,7 @@ class DeliveryDetailActivity : AppCompatActivity() {
             if (resp != null) {
                 if (ex != null) {
                     Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                    showAlert("Error",
+                    CclUtilities.getInstance().showAlert(this,"Error",
                         "No se pudo finalizar la sesion",
                         this::signOut)
                 } else {
@@ -229,24 +241,30 @@ class DeliveryDetailActivity : AppCompatActivity() {
                 }
             } else {
                 Log.e(TAG, "Error al intentar finalizar sesion", ex)
-                showAlert("Error",
+                CclUtilities.getInstance().showAlert(this,"Error",
                     "No se pudo finalizar la sesion remota",
                     this::signOut)
             }
         }
-        if (requestCode == MANAGE_ACTIVITY && data?.hasExtra("deliveredLines") == true){
-            Log.i(TAG, "volviendo de manage activity...")
-            val deliveryLines = data.getSerializableExtra("deliveredLines") as ArrayList<DeliveryLine>
-            Log.i(TAG, "delivery lines obtenidas de activity manage: $deliveryLines")
-            if (!deliveryLines.isNullOrEmpty()) {
-                Log.i(TAG, "actualizando delivery lines...")
-                viewModel.deliveryLines.value?.forEach {it ->
-                    val found = deliveryLines.find{dl ->
-                        dl.id == it.id
+        if (requestCode == MANAGE_ACTIVITY) {
+            if (data?.hasExtra("deliveredLines") == true) {
+                Log.i(TAG, "volviendo de manage activity...")
+                val deliveryLines =
+                    data.getSerializableExtra("deliveredLines") as ArrayList<DeliveryLine>
+                Log.i(TAG, "delivery lines obtenidas de activity manage: $deliveryLines")
+                if (!deliveryLines.isNullOrEmpty()) {
+                    Log.i(TAG, "actualizando delivery lines...")
+                    viewModel.deliveryLines.value?.forEach { it ->
+                        val found = deliveryLines.find { dl ->
+                            dl.id == it.id
+                        }
+                        it.delivered = found?.delivered ?: 0
                     }
-                    it.delivered = found?.delivered ?: 0
+                    viewModel.deliveryLines.postValue(viewModel.deliveryLines.value)
                 }
-                viewModel.deliveryLines.postValue(viewModel.deliveryLines.value)
+            }
+            if (data?.hasExtra("delivery") == true) {
+
             }
         }
     }
@@ -260,13 +278,13 @@ class DeliveryDetailActivity : AppCompatActivity() {
         newState = state
         when(state) {
             "Cancelled" -> {
-                showAlert(getString(R.string.cancel_delivery), getString(R.string.cancel_delivery_prompt), this::changeDeliveryState)
+                CclUtilities.getInstance().showAlert(this,getString(R.string.cancel_delivery), getString(R.string.cancel_delivery_prompt), this::changeDeliveryState)
             }
             "Delivered" -> {
-                showAlert(getString(R.string.deliver_delivery), getString(R.string.deliver_delivery_prompt), this::changeDeliveryState)
+                CclUtilities.getInstance().showAlert(this,getString(R.string.deliver_delivery), getString(R.string.deliver_delivery_prompt), this::changeDeliveryState)
             }
             "UnDelivered" -> {
-                showAlert(getString(R.string.undeliver_delivery), getString(R.string.undeliver_delivery_prompt), this::changeDeliveryState)
+                CclUtilities.getInstance().showAlert(this,getString(R.string.undeliver_delivery), getString(R.string.undeliver_delivery_prompt), this::changeDeliveryState)
             }
         }
     }
@@ -278,7 +296,7 @@ class DeliveryDetailActivity : AppCompatActivity() {
     private fun changeDeliveryState(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion al intentar cambiar estado", ex)
-            showAlert("Error", "Sesion Expirada", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Error", "Sesion Expirada", this::signOut)
             return
         }
         showLoader()
@@ -303,27 +321,28 @@ class DeliveryDetailActivity : AppCompatActivity() {
                             Log.e(TAG,
                                 "Error actualizando delivery en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                            CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                         } catch (ex: SQLiteConstraintException) {
                             Log.e(TAG,
                                 "Error actualizando delivery en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                            CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                         } catch (ex: Exception) {
+                            FirebaseCrashlytics.getInstance().recordException(ex)
                             Log.e(TAG,
                                 "Error actualizando delivery en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
+                            CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.database_error), getString(R.string.database_error_saving_planifications))
                         }
                     }
                 } catch(toe: SocketTimeoutException) {
                     Log.e(TAG, "Network error when changing delivery state", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     Log.e(TAG,
                         "Network error when changing delivery state",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
         }
@@ -332,7 +351,7 @@ class DeliveryDetailActivity : AppCompatActivity() {
     private fun fetchDeliveryLines(accessToken: String?, idToken: String?, ex: AuthorizationException?) {
         if (ex != null) {
             Log.e(TAG, "ocurrio una excepcion al intentar obtener delivery lines", ex)
-            showAlert("Error", "Sesion Expirada", this::signOut)
+            CclUtilities.getInstance().showAlert(this,"Error", "Sesion Expirada", this::signOut)
             return
         }
         showLoader()
@@ -348,11 +367,13 @@ class DeliveryDetailActivity : AppCompatActivity() {
                     hideLoader()
                     val response = call.body()
                     Log.i(TAG, "fetching delivery lines response $response")
+                    deliveryLinesLoaded = call.code() == 200
                     if (response != null && response._embedded.planificationDeliveryDetailVO1s.isNotEmpty()) {
                         for (deliveryLine in response._embedded.planificationDeliveryDetailVO1s) {
                             deliveryLine.planificationId = planification?.id!!
                         }
                         viewModel.deliveryLines.postValue(response._embedded.planificationDeliveryDetailVO1s)
+                        checkManageBtnStatus()
                         try {
                             db?.deliveryLineDao()?.deleteAllByDelivery(viewModel.delivery.value?.deliveryId!!)
                             db?.deliveryLineDao()?.insertAll(response._embedded.planificationDeliveryDetailVO1s)
@@ -360,27 +381,28 @@ class DeliveryDetailActivity : AppCompatActivity() {
                             Log.e(TAG,
                                 "Error actualizando delivery lines en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
+                            CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
                         } catch (ex: SQLiteConstraintException) {
                             Log.e(TAG,
                                 "Error actualizando delivery lines en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
+                            CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
                         } catch (ex: Exception) {
+                            FirebaseCrashlytics.getInstance().recordException(ex)
                             Log.e(TAG,
                                 "Error actualizando delivery lines en la BD local",
                                 ex)
-                            showAlert(getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
+                            CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.database_error), getString(R.string.database_error_saving_delivery_lines))
                         }
                     }
                 } catch(toe: SocketTimeoutException) {
                     Log.e(TAG, "Network error when fetching delivery lines", toe)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 } catch (ioEx: IOException) {
                     Log.e(TAG,
                         "Network error when fetching delivery lines",
                         ioEx)
-                    showAlert(getString(R.string.network_error_title), getString(R.string.network_error))
+                    CclUtilities.getInstance().showAlert(this@DeliveryDetailActivity,getString(R.string.network_error_title), getString(R.string.network_error))
                 }
             }
         }
@@ -421,28 +443,6 @@ class DeliveryDetailActivity : AppCompatActivity() {
                     }
                 }
             }
-            val dialog: AlertDialog = builder.create()
-            dialog.show()
-        }
-    }
-
-    fun showAlert(title: String, message: String, positiveCallback: (() -> Unit)? = null, negativeCallback: (() -> Unit)? = null) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", DialogInterface.OnClickListener { dialog, id ->
-                if (positiveCallback != null) {
-                    positiveCallback()
-                }
-                dialog.dismiss()
-            })
-            builder.setNegativeButton("Cancelar", DialogInterface.OnClickListener { dialog, id ->
-                if (negativeCallback != null) {
-                    negativeCallback()
-                }
-                dialog.dismiss()
-            })
             val dialog: AlertDialog = builder.create()
             dialog.show()
         }

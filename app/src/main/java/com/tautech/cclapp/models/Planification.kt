@@ -13,10 +13,8 @@ data class Planification(
     var id: Long,
     @SerializedName("label")
     @ColumnInfo(name = "label")
-    var label: String? = "",/*
-    @SerializedName("address")
-    @ColumnInfo(name = "address")
-    var address: String? = "",*/
+    var label: String? = "",
+    var legalized: Boolean? = false,
     @SerializedName("totalCertified")
     @ColumnInfo(name = "totalCertified")
     var totalCertified: Int? = 0,
@@ -41,6 +39,12 @@ data class Planification(
     @SerializedName("totalDelivered")
     @ColumnInfo(name = "totalDelivered")
     var totalDelivered: Int? = 0,
+    @SerializedName("totalPartial")
+    @ColumnInfo(name = "totalPartial")
+    var totalPartial: Int? = 0,
+    @SerializedName("totalUndelivered")
+    @ColumnInfo(name = "totalUndelivered")
+    var totalUndelivered: Int? = 0,
     @SerializedName("totalLines")
     @ColumnInfo(name = "totalLines")
     var totalLines: Int? = 0,

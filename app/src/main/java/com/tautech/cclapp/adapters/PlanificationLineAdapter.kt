@@ -1,5 +1,6 @@
 package com.tautech.cclapp.adapters
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -9,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.RecyclerView
 import com.tautech.cclapp.R
 import com.tautech.cclapp.activities.DeliveryDetailActivity
@@ -16,7 +18,7 @@ import com.tautech.cclapp.models.Delivery
 import com.tautech.cclapp.models.Planification
 import kotlinx.android.synthetic.main.planification_card_item.view.*
 
-class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mutableListOf(), val planification: Planification?, val context: Context):
+class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mutableListOf(), val planification: Planification?, val context: FragmentActivity?, val requestCode: Int? = null):
     RecyclerView.Adapter<PlanificationLineAdapter.MyViewHolder>() {
     class MyViewHolder(val itemView: View, val planification: Planification?): RecyclerView.ViewHolder(itemView) {
         val openButton: Button
@@ -73,14 +75,21 @@ class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mut
             itemView.cardView.setCardBackgroundColor(backgroundColor)
             itemView.stateTv.backgroundTintList = colorStateList
             itemView.stateTv.text = delivery?.deliveryState
-            itemView.titleTv?.text = "${delivery?.deliveryId}-${delivery?.referenceDocument ?: ""}"
+            itemView.titleTv?.text = "${delivery?.deliveryNumber}-${delivery?.referenceDocument ?: ""}"
             val operation = when(planification?.planificationType){
                 "National" -> itemView.context.getString(R.string.certified)
                 else -> itemView.context.getString(R.string.delivered)
             }
-            val percent = when(planification?.planificationType){
-                "National" -> (100 * (delivery?.totalCertified ?: 0) / (delivery?.totalQuantity ?: 1)).toDouble()
-                else -> (100 * (delivery?.totalDelivered ?: 0) / (delivery?.totalQuantity ?: 1)).toDouble()
+            val totalCertified = delivery?.totalCertified ?: 0
+            val totalDelivered = delivery?.totalDelivered ?: 0
+            val totalQuantity = delivery?.totalQuantity ?: 0
+            val percent = if (totalQuantity > 0){
+                when(planification?.planificationType){
+                    "National" -> (100 * totalCertified / totalQuantity).toDouble()
+                    else -> (100 * totalDelivered / totalQuantity).toDouble()
+                }
+            } else {
+                0.0
             }
             val percentStr = String.format("%.2f", percent) + "% " + operation
             itemView.percentCertifiedTv?.text = percentStr
@@ -109,7 +118,7 @@ class PlanificationLineAdapter(private val dataList: MutableList<Delivery> = mut
                 putExtra("delivery", dataList[position])
                 putExtra("planification", planification)
             }
-            view.context.startActivity(intent)
+            context?.startActivityForResult(intent, requestCode ?: 0)
         }
     }
 

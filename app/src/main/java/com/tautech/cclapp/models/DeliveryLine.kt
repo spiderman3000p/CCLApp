@@ -2,10 +2,17 @@ package com.tautech.cclapp.models
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
 
-@Entity(primaryKeys = ["planificationId", "id", "deliveryId", "index"])
+@Entity(primaryKeys = ["planificationId", "id", "deliveryId", "index"],
+    indices = [Index("deliveryId")], foreignKeys = [ForeignKey(entity = Delivery::class,
+        parentColumns = ["deliveryId"],
+        childColumns = ["deliveryId"],
+        onDelete = ForeignKey.CASCADE,
+        onUpdate = ForeignKey.CASCADE)])
 data class DeliveryLine(
     @SerializedName("id")
     @ColumnInfo(name = "id")
@@ -43,9 +50,6 @@ data class DeliveryLine(
     @SerializedName("certified")
     @ColumnInfo(name = "certified")
     var certified: Int = 0,
-    /*@SerializedName("delivered")
-    @ColumnInfo(name = "delivered")
-    var delivered: Int? = null,*/
     @SerializedName("index")
     @ColumnInfo(name = "index")
     var index: Int = 0,

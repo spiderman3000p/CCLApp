@@ -10,6 +10,7 @@ import com.github.appintro.AppIntro
 import com.github.appintro.AppIntroFragment
 import com.github.appintro.AppIntroPageTransformerType
 import com.tautech.cclapp.R
+import com.tautech.cclapp.classes.CclUtilities
 
 class IntroActivity : AppIntro() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,21 +81,10 @@ class IntroActivity : AppIntro() {
 
     override fun onUserDeniedPermission(permissionName: String) {
         // User pressed "Deny" on the permission dialog
-        showAlert(getString(R.string.warning), getString(R.string.user_denied_permission_msg))
+        CclUtilities.getInstance().showAlert(this,getString(R.string.warning), getString(R.string.user_denied_permission_msg))
     }
     override fun onUserDisabledPermission(permissionName: String) {
         // User pressed "Deny" + "Don't ask again" on the permission dialog
-        showAlert(getString(R.string.warning), getString(R.string.user_denied_permission_msg))
-    }
-
-    fun showAlert(title: String, message: String) {
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this)
-            builder.setTitle(title)
-            builder.setMessage(message)
-            builder.setPositiveButton("Aceptar", null)
-            val dialog: AlertDialog = builder.create();
-            dialog.show();
-        }
+        CclUtilities.getInstance().showAlert(this,getString(R.string.warning), getString(R.string.user_denied_permission_msg))
     }
 }

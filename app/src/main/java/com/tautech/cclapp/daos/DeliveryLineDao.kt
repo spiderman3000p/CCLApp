@@ -62,6 +62,9 @@ interface DeliveryLineDao {
     @Query("SELECT A.* FROM deliveryline AS A WHERE A.planificationId = CAST(:planificationId AS NUMERIC) AND A.id NOT IN (SELECT B.deliveryLineId FROM certification AS B WHERE B.planificationId = CAST(:planificationId AS NUMERIC) AND B.`index` = A.`index` AND B.deliveryLineId = A.id)")
     fun getAllPendingByPlanification(planificationId: Long): List<DeliveryLine>
 
+    @Query("SELECT SUM((A.price/A.quantity) * A.delivered) FROM deliveryline AS A JOIN delivery B ON A.deliveryId = B.deliveryId WHERE A.planificationId = CAST(:planificationId AS NUMERIC) AND (B.deliveryState='Delivered' OR B.deliveryState='Partial')")
+    fun getTotalDeliveredByPlanification(planificationId: Long): Double?
+
     @Query("SELECT * FROM deliveryline WHERE id IN (:ids)")
     fun getAllByIds(ids: LongArray): List<DeliveryLine>
 }
